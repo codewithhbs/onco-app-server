@@ -1,0 +1,38 @@
+{
+  "expo": {
+    "name": "Onco Health Mart",
+    "slug": "Onco-Health-Mart",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/logo/ic_launcher.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.oncohealthmart.app",
+      "icon": "./assets/logo/ic_launcher.png"
+    },
+    "splash": {
+      "image": "./assets/logo/ic_launcher_foreground.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#65C0E7"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/logo/ic_launcher_foreground.png",
+        "backgroundColor": "#65C0E7"
+      },
+      "icon": "./assets/logo/ic_launcher.png",
+      "package": "com.oncohealthmart.app"
+    },
+    "web": {
+      "favicon": "./assets/logo/ic_launcher_round.png"
+    },
+    "plugins": ["expo-secure-store", "expo-video"],
+    "extra": {
+      "eas": {
+        "projectId": "bdb294ff-0afe-4463-85be-2fa5187578d8"
+      }
+    }
+  }
+}
