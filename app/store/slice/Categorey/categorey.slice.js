@@ -27,7 +27,6 @@ export const fetchCategories = createAsyncThunk(
 export const fetchCategoriesById = createAsyncThunk(
   "categories/fetchCategoriesById",
   async (requestId, { rejectWithValue }) => {
-    console.log("comm id: " + requestId);
     try {
       const response = await axios.get(`${API_V1_URL}/api/v1/get-Category?categoryId=${requestId}`);
       return response?.data?.data[0]; 

@@ -1,4 +1,4 @@
-package com.happy_coding.app
+package com.oncohealthmart.app
 
 import android.app.Application
 import android.content.res.Configuration

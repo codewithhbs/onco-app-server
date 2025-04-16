@@ -37,10 +37,11 @@ export const LocationProvider = ({ children }) => {
 
             // Attempt to get the last known location
             let locationData = await Location.getCurrentPositionAsync({
-                accuracy: Location.Accuracy.Highest,
+                accuracy: Location.Accuracy.BestForNavigation,
                 maximumAge: 10000, // Use the last available location if it’s no older than 10 seconds
                 timeout: 5000, // Timeout after 5 seconds if location is not available
             });
+           
 
             if (!locationData?.coords) {
                 setErrorMsg('Failed to retrieve coordinates');
@@ -51,7 +52,7 @@ export const LocationProvider = ({ children }) => {
             const { latitude, longitude } = locationData.coords;
 
             // Fetch weather/address info based on latitude and longitude in the background
-            const address = await fetchLocationData(latitude, longitude);
+            const address = await fetchLocationData(28.6960, 77.1526);
 
             setLocation({ ...locationData.coords, weather: address });
         } catch (err) {

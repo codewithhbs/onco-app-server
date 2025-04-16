@@ -35,10 +35,6 @@ export const loginUser = createAsyncThunk(
         try {
             const response = await axios.post(`${API_V1_URL}/api/v1/user-login`, { mobile });
             const { token, otp, login } = response.data;
-
-
-
-
             await saveToSecureStore("token", token);
             await saveToSecureStore("otp", otp);
             await saveToSecureStore("isVerify", 'false');

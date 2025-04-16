@@ -3,7 +3,7 @@ import {
     View,
     Text,
     StyleSheet,
-   
+
     Image,
     TouchableOpacity,
     ActivityIndicator,
@@ -13,11 +13,13 @@ import {
     Dimensions,
     Animated,
     ScrollView,
+    Platform,
 } from "react-native";
 import axios from "axios";
 import * as SecureStore from "expo-secure-store";
 import Icon from "react-native-vector-icons/MaterialCommunityIcons";
 import { API_V1_URL } from "../../../constant/API";
+import { useNavigation } from "@react-navigation/native";
 
 const { width, height } = Dimensions.get("window");
 
@@ -29,6 +31,7 @@ const ImageSlider = ({ images, visible, onClose }) => {
         <Modal visible={visible} transparent={true} animationType="fade">
             <View style={styles.modalContainer}>
                 <View style={styles.modalHeader}>
+
                     <Text style={styles.modalTitle}>Prescription Images</Text>
                     <TouchableOpacity onPress={onClose} style={styles.closeButton}>
                         <Icon name="close" size={24} color="#FFF" />
@@ -168,6 +171,7 @@ const MyPrescriptions = () => {
     const [prescriptions, setPrescriptions] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
+    const navigation = useNavigation()
 
     useEffect(() => {
         fetchPrescriptions();
@@ -221,10 +225,25 @@ const MyPrescriptions = () => {
     return (
         <SafeAreaView style={styles.container}>
             <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+          {Platform.OS === "ios" ? (
+              <View style={styles.Iosheader}>
+              <TouchableOpacity onPress={() => navigation.goBack()} style={styles.title}>
+                  <Icon name="arrow-left" size={24} color="#000" />
+              </TouchableOpacity>
+             <View>
+             <Text style={styles.title}>My Prescriptions</Text>
+             <Text style={styles.subtitle}>{prescriptions.length} prescriptions found</Text>
+             </View>
+          </View>
+          ):(
             <View style={styles.header}>
-                <Text style={styles.title}>My Prescriptions</Text>
-                <Text style={styles.subtitle}>{prescriptions.length} prescriptions found</Text>
-            </View>
+           
+      
+           <Text style={styles.title}>My Prescriptions</Text>
+           <Text style={styles.subtitle}>{prescriptions.length} prescriptions found</Text>
+         
+        </View>
+          )}
             <ScrollView contentContainerStyle={styles.listContent} showsVerticalScrollIndicator={false}>
                 {prescriptions.map((item) => (
                     <PrescriptionItem key={item.uuid} item={item} />
@@ -240,6 +259,16 @@ const styles = StyleSheet.create({
         backgroundColor: "#F9FAFB",
     },
     header: {
+     
+        backgroundColor: "#FFFFFF",
+        padding: 16,
+        borderBottomWidth: 1,
+        borderBottomColor: "#E5E7EB",
+    },
+    Iosheader:{
+        flexDirection:'row',
+        justifyContent:'space-between',
+        alignItems:'center',
         backgroundColor: "#FFFFFF",
         padding: 16,
         borderBottomWidth: 1,

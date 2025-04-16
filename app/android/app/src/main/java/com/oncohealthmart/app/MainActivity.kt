@@ -1,4 +1,4 @@
-package com.happy_coding.app
+package com.oncohealthmart.app
 import expo.modules.splashscreen.SplashScreenManager
 
 import android.os.Build

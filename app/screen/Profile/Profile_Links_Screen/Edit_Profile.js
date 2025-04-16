@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react"
-import { View, Text, StatusBar, StyleSheet, TextInput, TouchableOpacity, ScrollView, Alert, Switch } from "react-native"
+import { View, Text, StatusBar, StyleSheet, TextInput, TouchableOpacity, ScrollView, Alert, Switch, Platform } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 import { useSelector } from "react-redux"
 import Icon from "react-native-vector-icons/MaterialCommunityIcons"
@@ -22,7 +22,7 @@ export default function Edit_Profile() {
     const [otp, setOtp] = useState("")
     const [showPasswordChange, setShowPasswordChange] = useState(false)
     const [showPassword, setShowPassword] = useState(false)
-    
+
     useEffect(() => {
         setFormData({
             name: user.customer_name,
@@ -170,10 +170,12 @@ export default function Edit_Profile() {
     return (
         <SafeAreaView style={styles.container}>
             <StatusBar barStyle="light-content" backgroundColor="#0A95DA" />
-            <View style={styles.header}>
-                <Text style={styles.title}>Edit Profile</Text>
-                <Text style={styles.subtitle}>Update Your Profile Information</Text>
-            </View>
+            {Platform.OS === "ios" ? null : (
+                <View style={styles.header}>
+                    <Text style={styles.title}>Edit Profile</Text>
+                    <Text style={styles.subtitle}>Update Your Profile Information</Text>
+                </View>
+            )}
             <ScrollView style={styles.formContainer}>
                 {renderInput("name", "Full Name")}
                 {renderInput("number", "Phone Number", false, "phone-pad")}

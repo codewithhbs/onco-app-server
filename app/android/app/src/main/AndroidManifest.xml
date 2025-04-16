@@ -2,6 +2,7 @@
   <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
   <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
   <uses-permission android:name="android.permission.INTERNET"/>
+  <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"/>
   <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
   <uses-permission android:name="android.permission.RECORD_AUDIO"/>
   <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
@@ -29,6 +30,7 @@
         <category android:name="android.intent.category.BROWSABLE"/>
         <data android:scheme="com.happy_coding.app"/>
         <data android:scheme="exp+onco-health-mart"/>
+        <data android:scheme="com.oncohealthmart.app"/>
       </intent-filter>
     </activity>
   </application>

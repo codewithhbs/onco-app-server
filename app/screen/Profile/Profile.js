@@ -22,7 +22,10 @@ export default function Profile() {
         { title: 'Legal', route: 'Legal', icon: 'lock-outline' },
         { title: 'Help & Support', route: 'Contact_us', icon: 'help-circle-outline' },
         { title: 'About Us', route: 'About', icon: 'information-outline' },
+
         { title: 'Logout', route: 'Logout', icon: 'logout-variant' },
+        { title: 'Delete My Account', route: 'delete', icon: 'close' }
+
     ];
 
     if (!user) {

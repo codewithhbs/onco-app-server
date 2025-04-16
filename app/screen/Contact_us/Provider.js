@@ -4,17 +4,50 @@ import Icon from "react-native-vector-icons/MaterialCommunityIcons"
 import { LinearGradient } from "expo-linear-gradient"
 
 const Provider = ({ data }) => {
- 
-    const handleWhatsApp = () => {
-        Linking.openURL(`whatsapp://send?phone=+91${data?.contact_phone}`)
+
+    const handleWhatsApp = async () => {
+        const phone = `+91${data?.contact_phone}`
+        const url = Platform.OS === 'ios'
+            ? `https://wa.me/${phone}`
+            : `whatsapp://send?phone=${phone}`
+
+        const supported = await Linking.canOpenURL(url)
+        if (supported) {
+            Linking.openURL(url)
+        } else {
+            Alert.alert(
+                'WhatsApp Not Available',
+                'WhatsApp is not installed or not supported on your device.'
+            )
+        }
     }
 
-    const handleCall = () => {
-        Linking.openURL(`tel:+91${data?.contact_phone}`)
+    const handleCall = async () => {
+        const url = `tel:+91${data?.contact_phone}`
+        const supported = await Linking.canOpenURL(url)
+        if (supported) {
+            Linking.openURL(url)
+        } else {
+            Alert.alert(
+                'Call Not Supported',
+                'Your device does not support making calls.'
+            )
+        }
     }
 
-    const handleEmail = () => {
-        Linking.openURL(`mailto:${data?.contact_email}`)
+    const handleEmail = async () => {
+        const email = data?.contact_email
+        const url = `mailto:${email}`
+    
+        const supported = await Linking.canOpenURL(url)
+        if (supported) {
+            Linking.openURL(url)
+        } else {
+            Alert.alert(
+                'Email Not Supported',
+                'No email app found on your device to send the email.'
+            )
+        }
     }
 
     const ContactCard = ({ title, subtitle, icon, buttonText, onPress, colors, iconRight }) => (

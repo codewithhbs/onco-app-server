@@ -1,10 +1,11 @@
-import { View, Text, StyleSheet, TouchableOpacity, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Dimensions, Alert } from 'react-native';
 import React from 'react';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { useNavigation } from '@react-navigation/native';
 import { resetState } from '../../store/slice/auth/login.slice';
 import * as SecureStore from 'expo-secure-store';
 import { useDispatch } from 'react-redux';
+import axios from 'axios';
 
 const { width } = Dimensions.get('window');
 
@@ -15,7 +16,6 @@ export default function ProfileLinks({ Links }) {
     const handlePress = async (route) => {
         if (route === 'Logout') {
             try {
-
                 await SecureStore.deleteItemAsync('token');
                 await SecureStore.deleteItemAsync('isSkip');
                 await SecureStore.deleteItemAsync("expireTime");
@@ -30,9 +30,50 @@ export default function ProfileLinks({ Links }) {
                 console.error('Logout error:', error);
             }
             return;
+        } else if (route === "delete") {
+         const token  = JSON.parse(await SecureStore.getItemAsync('token'))
+            Alert.alert(
+                "Delete Account",
+                "Are you sure you want to delete your account? This action cannot be undone.",
+                [
+                    {
+                        text: "Cancel",
+                        style: "cancel"
+                    },
+                    {
+                        text: "Delete",
+                        style: "destructive",
+                        onPress: async () => {
+                            try {
+                                const handleDeleteAccount = await axios.delete('http://192.168.1.10:9500/api/v1/delete-my-profile', {
+                                    headers: {
+                                        'Authorization': 'Bearer ' + token
+                                    }
+                                })
+                                console.log(handleDeleteAccount.data)
+                                // Optionally, reset the user state and redirect to login page
+                                await SecureStore.deleteItemAsync('token');
+                                await SecureStore.deleteItemAsync('isSkip');
+                                await SecureStore.deleteItemAsync("expireTime");
+                                await SecureStore.deleteItemAsync("user");
+                                dispatch(resetState());
+                                navigation.reset({
+                                    index: 0,
+                                    routes: [{ name: 'login' }],
+                                });
+                            } catch (error) {
+                                Alert.alert('Account Deleting',error.response.data.message)
+                                console.error('Error deleting account:', error);
+                            }
+                        }
+                    }
+                ]
+            );
+        } else {
+            navigation.navigate(route);
         }
-        navigation.navigate(route);
     };
+
     return (
         <View style={styles.container}>
             <Text style={styles.sectionTitle}>Account Settings</Text>
@@ -42,24 +83,27 @@ export default function ProfileLinks({ Links }) {
                         key={index}
                         style={[
                             styles.linkItem,
-                            link.route === 'Logout' && styles.logoutItem
+                            link.route === 'Logout' && styles.logoutItem,
+                            link.route === 'delete' && styles.deleteItem
                         ]}
                         onPress={() => handlePress(link.route)}
                     >
                         <View style={styles.linkContent}>
                             <View style={[
                                 styles.iconContainer,
-                                link.route === 'Logout' && styles.logoutIcon
+                                link.route === 'Logout' && styles.logoutIcon,
+                                link.route === 'delete' && styles.deleteIcon
                             ]}>
                                 <Icon
                                     name={link.icon}
                                     size={24}
-                                    color={link.route === 'Logout' ? '#dc2626' : '#0A95DA'}
+                                    color={link.route === 'Logout' ? '#dc2626' : link.route === 'delete' ? '#fff' : '#0A95DA'}
                                 />
                             </View>
                             <Text style={[
                                 styles.linkText,
-                                link.route === 'Logout' && styles.logoutText
+                                link.route === 'Logout' && styles.logoutText,
+                                link.route === 'delete' && styles.deleteText
                             ]}>
                                 {link.title}
                             </Text>
@@ -67,7 +111,7 @@ export default function ProfileLinks({ Links }) {
                         <Icon
                             name="chevron-right"
                             size={24}
-                            color={link.route === 'Logout' ? '#dc2626' : '#666'}
+                            color={link.route === 'Logout' ? '#dc2626' : link.route === 'delete' ? '#fff' : '#666'}
                         />
                     </TouchableOpacity>
                 ))}
@@ -133,6 +177,17 @@ const styles = StyleSheet.create({
     },
     logoutText: {
         color: '#dc2626',
+        fontWeight: '600',
+    },
+    deleteItem: {
+        borderBottomWidth: 0,
+        backgroundColor: '#dc2626',
+    },
+    deleteIcon: {
+        backgroundColor: '#b91c1c',
+    },
+    deleteText: {
+        color: '#fff',
         fontWeight: '600',
     },
 });

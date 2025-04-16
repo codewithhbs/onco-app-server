@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from "react"
-import { View, Text, TouchableOpacity, StyleSheet, Alert, ScrollView, ActivityIndicator } from "react-native"
+import { View, Text, TouchableOpacity, StyleSheet, Alert, ScrollView, ActivityIndicator, Platform, Linking } from "react-native"
 import Icon from "react-native-vector-icons/MaterialCommunityIcons"
 import * as ImagePicker from "expo-image-picker"
 import * as SecureStore from "expo-secure-store"
@@ -23,35 +23,73 @@ const PrescriptionUpload = () => {
     const [uploadedPrescriptions, setUploadedPrescriptions] = useState([])
     const [IdPrescriptions, setIdPrescriptions] = useState('')
 
-    const handleUpload = useCallback(async () => {
-        try {
-            const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync()
-            if (status !== "granted") {
-                Alert.alert("Permission Denied", "We need permission to access your media library.")
-                return
-            }
+  
+const handleUpload = useCallback(async () => {
+    try {
+        const { status, canAskAgain } = await ImagePicker.requestMediaLibraryPermissionsAsync()
 
-            const result = await ImagePicker.launchImageLibraryAsync({
-                mediaTypes: ImagePicker.MediaTypeOptions.Images,
-                quality: 0.7,
-                allowsMultipleSelection: true,
-                selectionLimit: 5,
-            })
-
-            if (!result.canceled) {
-                const newImages = result.assets.map((asset) => ({
-                    uri: asset.uri,
-                    name: asset.fileName || `image-${Date.now()}.jpg`,
-                    type: asset.mimeType || "image/jpeg",
-                }))
-                setImages((prev) => [...prev, ...newImages].slice(0, 5))
-                setModalVisible(false)
+        if (status !== "granted") {
+            if (canAskAgain) {
+                Alert.alert(
+                    "Permission Required",
+                    "We need access to your photo gallery to let you upload images.",
+                    [
+                        {
+                            text: "Retry",
+                            onPress: () => handleUpload(), // Retry
+                        },
+                        {
+                            text: "Cancel",
+                            style: "cancel",
+                        },
+                    ]
+                )
+            } else {
+                Alert.alert(
+                    "Permission Denied",
+                    "Photo library access is disabled. Please enable it from your device settings.",
+                    [
+                        {
+                            text: "Open Settings",
+                            onPress: () => {
+                                if (Platform.OS === "ios") {
+                                    Linking.openURL("app-settings:")
+                                } else {
+                                    Linking.openSettings()
+                                }
+                            },
+                        },
+                        {
+                            text: "Cancel",
+                            style: "cancel",
+                        },
+                    ]
+                )
             }
-        } catch (error) {
-            setError("Error selecting images. Please try again.")
-            console.error("Error selecting images:", error)
+            return
         }
-    }, [])
+
+        const result = await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+            quality: 0.7,
+            allowsMultipleSelection: true,
+            selectionLimit: 5,
+        })
+
+        if (!result.canceled) {
+            const newImages = result.assets.map((asset) => ({
+                uri: asset.uri,
+                name: asset.fileName || `image-${Date.now()}.jpg`,
+                type: asset.mimeType || "image/jpeg",
+            }))
+            setImages((prev) => [...prev, ...newImages].slice(0, 5))
+            setModalVisible(false)
+        }
+    } catch (error) {
+        setError("Error selecting images. Please try again.")
+        console.error("Error selecting images:", error)
+    }
+}, [])
 
     const handleCamera = useCallback(async () => {
         try {

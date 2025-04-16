@@ -246,6 +246,9 @@ export default function Orders() {
 
     const renderHeader = () => (
         <View style={styles.header}>
+             <TouchableOpacity onPress={()=> navigation.goBack()} style={styles.refreshButton}>
+                <Icon name="arrow-left" size={24} color="#0A95DA" />
+            </TouchableOpacity>
             <Text style={styles.headerTitle}>My Orders</Text>
             <TouchableOpacity onPress={onRefresh} style={styles.refreshButton}>
                 <Icon name="refresh" size={24} color="#0A95DA" />
