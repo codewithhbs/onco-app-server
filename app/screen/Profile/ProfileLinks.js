@@ -6,6 +6,7 @@ import { resetState } from '../../store/slice/auth/login.slice';
 import * as SecureStore from 'expo-secure-store';
 import { useDispatch } from 'react-redux';
 import axios from 'axios';
+import { API_V1_URL } from '../../constant/API';
 
 const { width } = Dimensions.get('window');
 
@@ -45,7 +46,7 @@ export default function ProfileLinks({ Links }) {
                         style: "destructive",
                         onPress: async () => {
                             try {
-                                const handleDeleteAccount = await axios.delete('http://192.168.1.10:9500/api/v1/delete-my-profile', {
+                                const handleDeleteAccount = await axios.delete(`${API_V1_URL}/api/v1/delete-my-profile`, {
                                     headers: {
                                         'Authorization': 'Bearer ' + token
                                     }
