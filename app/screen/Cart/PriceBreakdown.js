@@ -79,7 +79,7 @@ const PriceBreakdown = ({ items, coupons, enabledCheckOutButton = false, logged 
     } catch (error) {
       setError(`We're sorry, but this coupon code appears to be invalid. Please check the details and try again`)
       animateShake()
-      console.error("Coupon application error:", error.response)
+      console.error("Coupon application error:", error.response.data)
     } finally {
       setLoading(false)
     }

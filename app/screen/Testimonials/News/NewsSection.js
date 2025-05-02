@@ -12,7 +12,7 @@ const NewsSection = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
 
-  // Fetch news from the API
+
   const fetchNews = useCallback(async () => {
     try {
       setLoading(true);
@@ -60,7 +60,7 @@ const NewsSection = () => {
   ), [newsData, fadeValues]);
 
   return (
-    <Layout isLocation={false} isSearchShow={false}>
+    <Layout isSafe={false} isLocation={false} isSearchShow={false}>
       <View style={styles.container}>
         <View style={styles.header}>
           <Text style={styles.title}>Latest News</Text>

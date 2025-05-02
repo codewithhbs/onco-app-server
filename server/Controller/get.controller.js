@@ -48,7 +48,7 @@ exports.GetAllProduct = async (req, res) => {
         const { deal_of_the_day = '0', top_selling = '0', latest_product = '0', category } = req.query;
 
         // Start building the SQL query
-        let sqlQuery = 'SELECT * FROM cp_product WHERE 1=1'; // Base query with a generic condition
+        let sqlQuery = 'SELECT * FROM cp_product WHERE 1=1'; 
 
         if (deal_of_the_day === '1') {
             sqlQuery += " AND deal_of_the_day = '1'";
@@ -191,6 +191,7 @@ exports.GetAllActiveBanners = async (req, res) => {
 // Content gets
 exports.GetContentOfPage = async (req, res) => {
     try {
+       
         const sqlQuery = `SELECT * FROM cp_content WHERE type = 'Legal'`;
         const [pages] = await pool.execute(sqlQuery);
         if (pages.length === 0) {
@@ -343,5 +344,51 @@ exports.getNews = async (req, res) => {
 
         console.error('Error fetching news:', error);
         res.status(500).json({ message: 'An error occurred while fetching news', error: error.message });
+    }
+};
+
+
+
+
+exports.getMedicinesBySaltName = async (req, res) => {
+    try {
+        const { salt, id } = req.query;
+
+        if (!salt) {
+            return res.status(400).json({ message: "Salt is required." });
+        }
+
+        let sqlQuery = 'SELECT * FROM cp_product WHERE salt = ?';
+        let queryParams = [salt];
+
+        if (id) {
+            sqlQuery += ' AND product_id != ?';
+            queryParams.push(id);
+        }
+
+        const [products] = await pool.execute(sqlQuery, queryParams);
+
+        if (products.length === 0) {
+            return res.status(404).json({ message: "No products found." });
+        }
+
+        const updatedProducts = products.map(product => {
+            ['image_1', 'image_2', 'image_3', 'image_4', 'image_5'].forEach(field => {
+                if (product[field]) {
+                    product[field] = `https://www.oncohealthmart.com${process.env.DIRECTORY_img_upload}/${product[field]}`;
+                }
+            });
+            return product;
+        });
+
+        res.status(200).json({
+            success: true,
+            count: updatedProducts.length,
+            message: 'Products fetched successfully.',
+            data: updatedProducts,
+        });
+    } catch (error) {
+        console.error("Error fetching products by salt:", error);
+        res.status(500).json({ message: "Server error while fetching products." });
     }
 };

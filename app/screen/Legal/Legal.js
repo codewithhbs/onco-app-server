@@ -90,7 +90,7 @@ const Legal = ({ navigation }) => {
         <>
             <SafeAreaView style={styles.container}>
                 {/* Tabs */}
-                <ScrollView horizontal style={styles.tabContainer} showsHorizontalScrollIndicator={false}>
+                <ScrollView horizontal style={styles.tabContainer} showsVerticalScrollIndicator={false} showsHorizontalScrollIndicator={false}>
                     {tabs.map(tab => (
                         <TouchableOpacity
                             key={tab.id}
@@ -120,6 +120,7 @@ const Legal = ({ navigation }) => {
 
             <View style={styles.contentContainer}>
                 <WebView
+                    showsVerticalScrollIndicator={false}
                     source={{ html: getActiveContent() }}
                     style={styles.webview}
                     scalesPageToFit={true}

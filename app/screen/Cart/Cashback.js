@@ -7,7 +7,7 @@ export default function Cashback({ onApply, onRemove ,alreadyApplies }) {
     const navigation = useNavigation()
     const onApplyRef = useRef(onApply);
     const onRemoveRef = useRef(onRemove);
-    
+  
     return (
         <View style={{ padding: 8, backgroundColor: '#fff', borderRadius: 10, marginHorizontal: 2, marginBottom: 15 }}>
 

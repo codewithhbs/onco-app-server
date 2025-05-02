@@ -289,7 +289,7 @@ const RootApp = () => (
     <Provider store={store}>
       <ToastProvider>
         <LocationProvider>
-          <StatusBar style="dark" />
+       
           <App />
         </LocationProvider>
       </ToastProvider>

@@ -39,6 +39,7 @@ const Cart = () => {
   }, []);
 
   const handleCouponApply = (code) => {
+    console.log("handleCouponApply",code)
     setCoupon(code);
   };
   const handleCouponRemove = () => {
