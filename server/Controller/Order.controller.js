@@ -156,20 +156,15 @@ exports.UploadPrescription = (req, res) => {
 
 exports.CreateOrder = async (req, res) => {
   try {
+    // Validate user authentication
     const userId = req.user?.id?.customer_id;
     if (!userId) {
       return res
-        .status(400)
-        .json({ message: "Please log in to complete the order." });
+        .status(401)
+        .json({ message: "Authentication required. Please log in to complete the order." });
     }
 
-    // Check if user exists in the database
-    const checkUserSql = `SELECT * FROM cp_customer WHERE customer_id = ?`;
-    const [userExists] = await pool.execute(checkUserSql, [userId]);
-    if (userExists?.length === 0) {
-      return res.status(404).json({ message: "User not found." });
-    }
-
+    // Extract request data
     const {
       Rx_id,
       address,
@@ -184,19 +179,7 @@ exports.CreateOrder = async (req, res) => {
       payment_mode = "Razorpay",
     } = req.body;
 
-    // console.log("req.body", req.body)
-    // console.log("req.Rx_id", Rx_id);
-
-    const prescriptionQuery = `SELECT * FROM cp_app_prescription WHERE genreate_presc_order_id = ?`;
-    const [prescription] = await pool.execute(prescriptionQuery, [Rx_id]);
-
-    if (prescription.length === 0) {
-      return res.status(404).json({ message: "Prescription not found." });
-    }
-
-    // console.log("prescription", prescription[0]?.id);
-    const newRxId = prescription[0]?.id;
-
+    // Validate required fields
     if (!cart?.items || cart?.items?.length === 0) {
       return res.status(400).json({ message: "Product details are required." });
     }
@@ -208,20 +191,64 @@ exports.CreateOrder = async (req, res) => {
     if (!patientName || !patientPhone) {
       return res.status(400).json({ message: "Patient details are required." });
     }
-    const query = `SELECT * FROM cp_settings`;
-    const [rows] = await pool.execute(query);
-    if (rows.length === 0) {
-      return res.status(404).json({ message: "No settings found." });
-    }
-    const setting = rows[0];
 
+    // Check if user exists in the database
+    const checkUserSql = `SELECT * FROM cp_customer WHERE customer_id = ?`;
+    const [userExists] = await pool.execute(checkUserSql, [userId])
+      .catch(err => {
+        console.error("Database error when checking user:", err);
+        throw new Error("Failed to verify user information.");
+      });
+
+    if (!userExists || userExists.length === 0) {
+      return res.status(404).json({ message: "User not found." });
+    }
+
+    // Verify prescription if provided
+    let newRxId = null;
+    if (Rx_id) {
+      const prescriptionQuery = `SELECT * FROM cp_app_prescription WHERE genreate_presc_order_id = ?`;
+      const [prescription] = await pool.execute(prescriptionQuery, [Rx_id])
+        .catch(err => {
+          console.error("Database error when checking prescription:", err);
+          throw new Error("Failed to verify prescription information.");
+        });
+
+      if (prescription.length === 0) {
+        return res.status(404).json({ message: "Prescription not found." });
+      }
+
+      newRxId = prescription[0]?.id;
+    }
+
+    // Get system settings
+    const settingsQuery = `SELECT * FROM cp_settings`;
+    const [settings] = await pool.execute(settingsQuery)
+      .catch(err => {
+        console.error("Database error when fetching settings:", err);
+        throw new Error("Failed to retrieve system settings.");
+      });
+
+    if (!settings || settings.length === 0) {
+      return res.status(500).json({ message: "System settings not available." });
+    }
+
+    const setting = settings[0];
+
+    // Calculate shipping and additional charges
     const shippingCharge =
       cart?.totalPrice > setting?.shipping_threshold
         ? 0
         : Number(setting?.shipping_charge);
-    const extraCharges = paymentOption === "COD" ? setting?.cod_fee : 0;
+    const extraCharges = paymentOption === "COD" ? Number(setting?.cod_fee) : 0;
+
+    // Create timestamp for order tracking
+    const orderDate = new Date();
+    const formattedDate = orderDate.toISOString().slice(0, 19).replace('T', ' ');
+
+    // Prepare order object
     const Order = {
-      order_date: new Date(),
+      order_date: formattedDate,
       orderFrom: "Application",
       customer_id: userExists[0]?.customer_id,
       prescription_id: newRxId || "",
@@ -238,14 +265,14 @@ exports.CreateOrder = async (req, res) => {
       customer_shipping_phone: patientPhone,
       customer_shipping_address: address?.stree_address,
       customer_shipping_pincode: address?.pincode,
-      amount: cart?.totalPrice,
+      amount: cart?.totalPrice + shippingCharge + extraCharges,
       subtotal: cart?.totalPrice,
-      order_gst: "", // Optional: populate if applicable
-      coupon_code: cart?.items?.couponCode || "",
-      coupon_discount: cart?.items?.discount || 0,
+      order_gst: cart?.totalTax || "",
+      coupon_code: cart?.couponCode || "",
+      coupon_discount: cart?.discount || 0,
       shipping_charge: shippingCharge,
       additional_charge: extraCharges,
-      payment_mode: paymentOption === "Online" ? "Razorpay" : "COD",
+      payment_mode: paymentOption === "Online" ? payment_mode : "COD",
       payment_option: paymentOption === "Online" ? "Online" : "COD",
       status:
         newRxId && paymentOption
@@ -253,9 +280,9 @@ exports.CreateOrder = async (req, res) => {
             ? "Pending"
             : "New"
           : "Prescription Pending",
-
     };
 
+    // Prepare product details
     const ProductInOrder = cart?.items.map((item) => ({
       product_id: item?.ProductId,
       product_name: item?.title,
@@ -265,6 +292,8 @@ exports.CreateOrder = async (req, res) => {
       tax_percent: item?.taxPercent || 0,
       tax_amount: item?.taxAmount || 0,
     }));
+
+    // SQL queries
     const sqlOrderDetails = `
         INSERT INTO cp_order_details 
         (order_id, product_id, product_name, product_image, unit_price, unit_quantity, tax_percent, tax_amount) 
@@ -272,131 +301,150 @@ exports.CreateOrder = async (req, res) => {
 
     const saveOrderSql = `
        INSERT INTO cp_order (
-           order_date,orderFrom, customer_id, prescription_id, hospital_name, doctor_name, prescription_notes,
-           customer_name,patient_name, customer_email, customer_phone, customer_address, customer_pincode,
+           order_date, orderFrom, customer_id, prescription_id, hospital_name, doctor_name, prescription_notes,
+           customer_name, patient_name, customer_email, customer_phone, customer_address, customer_pincode,
            customer_shipping_name, customer_shipping_phone, customer_shipping_address, customer_shipping_pincode,
            amount, subtotal, order_gst, coupon_code, coupon_discount, shipping_charge, additional_charge,
            payment_mode, payment_option, status
        ) VALUES (
-           ?, ?, ?, ?, ?, ?, ?, ?,?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,?
+           ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
        )`;
 
     const saveOrderInTemp = `
        INSERT INTO cp_order_temp (
-           order_date,razorpayOrderID,orderFrom, customer_id, prescription_id, hospital_name, doctor_name, prescription_notes,
-           customer_name,patient_namem customer_email, customer_phone, customer_address, customer_pincode,
+           order_date, razorpayOrderID, orderFrom, customer_id, prescription_id, hospital_name, doctor_name, prescription_notes,
+           customer_name, patient_name, customer_email, customer_phone, customer_address, customer_pincode,
            customer_shipping_name, customer_shipping_phone, customer_shipping_address, customer_shipping_pincode,
            amount, subtotal, order_gst, coupon_code, coupon_discount, shipping_charge, additional_charge,
            payment_mode, payment_option, status
        ) VALUES (
-           ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,?,?
+           ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
        )`;
 
-    const orderValues = Object.values(Order);
-    const razarpay = new CreateOrderRazorpay();
+    // Process order based on payment option
     if (paymentOption === "Online") {
-      const amount = cart?.totalPrice;
-      const sendOrder = await razarpay.createOrder(amount);
-      const TemOrder = {
-        order_date: new Date(),
-        razorpayOrderID: sendOrder.id,
-        orderFrom: "Application",
-        customer_id: userExists[0]?.customer_id,
-        prescription_id: newRxId || "",
-        hospital_name: hospitalName || "",
-        doctor_name: doctorName || "",
-        prescription_notes: prescriptionNotes || "",
-        customer_name: patientName,
-        customer_email: userExists[0]?.email_id,
-        customer_phone: patientPhone,
-        customer_address: address?.stree_address,
-        customer_pincode: address?.pincode,
-        customer_shipping_name: patientName,
-        customer_shipping_phone: patientPhone,
-        customer_shipping_address: address?.stree_address,
-        customer_shipping_pincode: address?.pincode,
-        amount: cart?.totalPrice,
-        subtotal: cart?.totalPrice,
-        order_gst: "", // Optional: populate if applicable
-        coupon_code: cart?.items?.couponCode || "",
-        coupon_discount: cart?.items?.discount || 0,
-        shipping_charge: shippingCharge,
-        additional_charge: 0,
-        payment_mode: payment_mode,
-        payment_option: paymentOption || "Online",
-        status: "Pending",
-      };
-
-      const orderValuesTemp = Object.values(TemOrder);
-      // console.log(orderValuesTemp)
-
-      const saveOrder = await pool.execute(saveOrderInTemp, orderValuesTemp);
-      //   console.log("temp order ", saveOrder);
-      let items = [];
-      let totalPrice = 0;
-
-      for (const item of ProductInOrder) {
-        const orderDetailsValues = [
-          saveOrder[0].insertId,
-          item.product_id,
-          item.product_name,
-          item.product_image,
-          item.unit_price,
-          item.unit_quantity,
-          item.tax_percent,
-          item.tax_amount,
-        ];
-
-        items.push(
-          `🛍 *${item.product_name}* - ₹${item.unit_price} x ${item.unit_quantity}`
-        );
-
-        // Calculate total price
-        totalPrice += item.unit_price * item.unit_quantity + item.tax_amount;
-
-        try {
-          await pool.execute(sqlOrderDetails, orderDetailsValues);
-          //   console.log("details", details);
-        } catch (error) {
-          console.error("Error inserting product:", error);
-        }
-      }
-
-      return res.status(201).json({
-        message: "Order created successfully.Please Pay !!!",
-        sendOrder,
-      });
-    } else {
+      // Handle online payment with Razorpay
       try {
+        const razorpay = new CreateOrderRazorpay();
+        const amount = Order.amount;
+        const sendOrder = await razorpay.createOrder(amount);
+
+        // Prepare temporary order for Razorpay
+        const TempOrder = {
+          order_date: formattedDate,
+          razorpayOrderID: sendOrder.id,
+          orderFrom: "Application",
+          customer_id: userExists[0]?.customer_id,
+          prescription_id: newRxId || "",
+          hospital_name: hospitalName || "",
+          doctor_name: doctorName || "",
+          prescription_notes: prescriptionNotes || "",
+          customer_name: patientName,
+          patient_name: patientName,
+          customer_email: userExists[0]?.email_id,
+          customer_phone: patientPhone,
+          customer_address: address?.stree_address,
+          customer_pincode: address?.pincode,
+          customer_shipping_name: patientName,
+          customer_shipping_phone: patientPhone,
+          customer_shipping_address: address?.stree_address,
+          customer_shipping_pincode: address?.pincode,
+          amount: Order.amount,
+          subtotal: cart?.totalPrice,
+          order_gst: cart?.totalTax || "",
+          coupon_code: cart?.couponCode || "",
+          coupon_discount: cart?.discount || 0,
+          shipping_charge: shippingCharge,
+          additional_charge: 0,
+          payment_mode: payment_mode,
+          payment_option: paymentOption || "Online",
+          status: "Pending",
+        };
+
+        const orderValuesTemp = Object.values(TempOrder);
+
+        // Save temporary order
+        const [saveOrder] = await pool.execute(saveOrderInTemp, orderValuesTemp)
+          .catch(err => {
+            console.error("Database error when saving temporary order:", err);
+            throw new Error("Failed to create temporary order.");
+          });
+
         // Save order details
-        const [orderPlaced] = await pool.execute(saveOrderSql, orderValues);
+        for (const item of ProductInOrder) {
+          const orderDetailsValues = [
+            saveOrder.insertId,
+            item.product_id,
+            item.product_name,
+            item.product_image,
+            item.unit_price,
+            item.unit_quantity,
+            item.tax_percent,
+            item.tax_amount,
+          ];
+
+          await pool.execute(sqlOrderDetails, orderDetailsValues)
+            .catch(err => {
+              console.error(`Database error when saving product ${item.product_name}:`, err);
+              // Continue with other products even if one fails
+            });
+        }
+
+        // Send admin notification for pending online payment
+        await sendAdminOrderNotification({
+          order: TempOrder,
+          products: ProductInOrder,
+          customer: userExists[0],
+          isTemp: true,
+          orderId: saveOrder.insertId,
+          razorpayOrderId: sendOrder.id
+        });
+
+        return res.status(201).json({
+          message: "Order created successfully. Please complete payment.",
+          sendOrder,
+        });
+      } catch (error) {
+        console.error("Error processing online payment:", error);
+        return res.status(500).json({
+          message: "Failed to process payment request.",
+          error: error.message
+        });
+      }
+    } else {
+      // Handle COD order
+      try {
+        const orderValues = Object.values(Order);
+
+        // Save order
+        const [orderPlaced] = await pool.execute(saveOrderSql, orderValues)
+          .catch(err => {
+            console.error("Database error when saving order:", err);
+            throw new Error("Failed to create order.");
+          });
 
         if (!orderPlaced?.insertId) {
-          throw new Error("Failed to retrieve insertId after saving order.");
+          throw new Error("Failed to retrieve order ID after saving order.");
         }
 
         const newOrderId = orderPlaced.insertId;
+        const transactionNumber = `PH-${newOrderId}`;
 
         // Update order with generated ID and transaction number
         const updateOrderQuery = `
-    UPDATE cp_order
-    SET databaseOrderID = ?, transaction_number = ?
-    WHERE order_id = ?
-  `;
+          UPDATE cp_order
+          SET databaseOrderID = ?, transaction_number = ?
+          WHERE order_id = ?
+        `;
 
         await pool.execute(updateOrderQuery, [
           newOrderId,
-          `PH-${newOrderId}`,
+          transactionNumber,
           newOrderId,
-        ]);
-
-        // Log the last executed query (for debugging)
-        let i = 0;
-        const lastQuery = saveOrderSql.replace(/\?/g, () => {
-          const val = orderValues[i++];
-          return typeof val === "string" ? `'${val}'` : val;
+        ]).catch(err => {
+          console.error("Database error when updating order with transaction number:", err);
+          // Continue even if this update fails
         });
-        console.log("Last Executed Query:", lastQuery);
 
         // Process each product in the order
         let items = [];
@@ -415,73 +463,285 @@ exports.CreateOrder = async (req, res) => {
           ];
 
           try {
-            const [result] = await pool.execute(
-              sqlOrderDetails,
-              orderDetailsValues
-            );
-            console.log(`Product inserted: ${item.product_name}`, result);
+            await pool.execute(sqlOrderDetails, orderDetailsValues);
           } catch (productError) {
-            console.error(
-              `Error inserting product ${item.product_name}:`,
-              productError
-            );
-            // Optional: continue or abort here depending on your policy
+            console.error(`Error inserting product ${item.product_name}:`, productError);
+            // Continue with other products even if one fails
           }
 
           // Add formatted item to the message
-          items.push(
-            `🛍 *${item.product_name}* - ₹${item.unit_price} x ${item.unit_quantity}`
-          );
+          items.push({
+            name: item.product_name,
+            price: item.unit_price,
+            quantity: item.unit_quantity,
+            tax: item.tax_amount,
+            total: (item.unit_price * item.unit_quantity) + item.tax_amount
+          });
 
           // Add to total amount
-          totalAmount += item.unit_price * item.unit_quantity + item.tax_amount;
+          totalAmount += (item.unit_price * item.unit_quantity) + item.tax_amount;
         }
 
-        // Compose order confirmation message
-        const message = `🎉 *Order Confirmed!*\n\nThank you for shopping with *Oncomart*! 🛒\n\n✅ Your order has been successfully placed.\n\n🛍 *Order Details:* \n${items.join(
-          "\n"
-        )}\n\n🚚 We will share tracking details soon.\n📦 Stay tuned for updates!\n\nHappy Shopping! 😊`;
-
-        console.log("Order confirmation message:", message);
-
-        // Validate user mobile number before sending message
-        const userMobile = userExists[0]?.mobile;
-        if (!userMobile) {
-          console.error("Error: Customer phone number not found.");
-          return res
-            .status(400)
-            .json({ error: "Customer phone number is missing." });
-        }
-
-        console.log("Sending message to:", userMobile);
-
-        // Send WhatsApp message
-        const sendResult = await sendMessage({
-          mobile: userMobile,
-          msg: message,
+        // Compose WhatsApp order confirmation message
+        const message = generateOrderConfirmationMessage({
+          orderNumber: transactionNumber,
+          customerName: patientName,
+          items: ProductInOrder,
+          subtotal: cart?.totalPrice,
+          shipping: shippingCharge,
+          extraCharges,
+          total: Order.amount,
+          paymentMethod: "Cash on Delivery"
         });
 
-        console.log("Message sent response:", sendResult);
+        // Send WhatsApp message to customer
+        const userMobile = userExists[0]?.mobile || patientPhone;
+        if (userMobile) {
+          try {
+            await sendMessage({
+              mobile: userMobile,
+              msg: message,
+            });
+          } catch (messageError) {
+            console.error("Failed to send WhatsApp notification:", messageError);
+            // Continue even if message fails
+          }
+        }
+
+        // Send email notification to admin
+        await sendAdminOrderNotification({
+          order: { ...Order, order_id: newOrderId, transaction_number: transactionNumber },
+          products: ProductInOrder,
+          customer: userExists[0],
+          isTemp: false,
+          orderId: newOrderId
+        });
 
         // Respond to client
         return res.status(201).json({
           message: "Order created successfully.",
           orderId: newOrderId,
-          orderPlaced,
+          transactionNumber
         });
       } catch (error) {
-        console.error("Error creating order:", error);
-        return res.status(500).json({ error: "Internal Server Error" });
+        console.error("Error creating COD order:", error);
+        return res.status(500).json({
+          message: "An error occurred while creating the order.",
+          error: error.message
+        });
       }
     }
   } catch (error) {
-    console.error("Error creating order:", error);
-    res.status(500).json({
-      message: "An error occurred while creating the order.",
+    console.error("Error in CreateOrder:", error);
+    return res.status(500).json({
+      message: "An unexpected error occurred. Please try again later.",
       error: error.message,
     });
   }
 };
+
+
+function generateOrderConfirmationMessage(params) {
+  const {
+    orderNumber,
+    customerName,
+    items,
+    subtotal,
+    shipping,
+    extraCharges,
+    total,
+    paymentMethod
+  } = params;
+
+  // Format items list
+  const itemsList = items.map(item =>
+    `• *${item.product_name}*\n  ₹${item.unit_price} × ${item.unit_quantity} = ₹${(item.unit_price * item.unit_quantity).toFixed(2)}`
+  ).join('\n');
+
+  // Build full message
+  return `🎉 *Order Confirmed!* 🎉
+
+Dear *${customerName}*,
+
+Thank you for shopping with *Oncomart*! Your order has been successfully placed.
+
+*Order #:* ${orderNumber}
+*Date:* ${new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+
+*Your Order:*
+${itemsList}
+
+*Order Summary:*
+Subtotal: ₹${subtotal.toFixed(2)}
+Shipping: ₹${shipping.toFixed(2)}
+${extraCharges > 0 ? `COD Fee: ₹${extraCharges.toFixed(2)}\n` : ''}
+*Total Amount:* ₹${total.toFixed(2)}
+
+*Payment Method:* ${paymentMethod}
+*Status:* Confirming
+
+Our team will process your order shortly. We'll share tracking details once your order ships.
+
+For any questions regarding your order, please contact our customer support at:
+📞 +91-XXXXXXXXXX
+📧 support@oncomart.com
+
+Thank you for trusting Oncomart for your healthcare needs. We value your health and well-being.
+
+Stay healthy! ❤️`;
+}
+
+
+async function sendAdminOrderNotification(params) {
+  const { order, products, customer, isTemp, orderId, razorpayOrderId = null } = params;
+
+  try {
+    // Calculate totals
+    const subtotal = products.reduce((sum, item) => sum + (item.unit_price * item.unit_quantity), 0);
+    const taxTotal = products.reduce((sum, item) => sum + (item.tax_amount || 0), 0);
+
+    // Get admin email from settings
+    const settingsQuery = `SELECT admin_email FROM cp_settings LIMIT 1`;
+    const [settings] = await pool.execute(settingsQuery);
+    const adminEmail = settings[0]?.admin_email || 'admin@oncomart.com';
+
+    // Format products for email
+    const formattedProducts = products.map((product, index) => {
+      const totalPrice = product.unit_price * product.unit_quantity;
+      return `
+        <tr>
+          <td style="padding: 10px; border-bottom: 1px solid #ddd;">${index + 1}</td>
+          <td style="padding: 10px; border-bottom: 1px solid #ddd;">${product.product_name}</td>
+          <td style="padding: 10px; border-bottom: 1px solid #ddd;">₹${product.unit_price.toFixed(2)}</td>
+          <td style="padding: 10px; border-bottom: 1px solid #ddd;">${product.unit_quantity}</td>
+          <td style="padding: 10px; border-bottom: 1px solid #ddd;">₹${totalPrice.toFixed(2)}</td>
+          <td style="padding: 10px; border-bottom: 1px solid #ddd;">₹${product.tax_amount.toFixed(2)}</td>
+          <td style="padding: 10px; border-bottom: 1px solid #ddd;">₹${(totalPrice + product.tax_amount).toFixed(2)}</td>
+        </tr>
+      `;
+    }).join('');
+
+    // Build email HTML
+    const emailSubject = isTemp
+      ? `New Pending Online Order #${orderId} (Razorpay: ${razorpayOrderId})`
+      : `New COD Order #${orderId} (${order.transaction_number})`;
+
+    const orderStatus = isTemp ? 'Pending Payment' : 'New';
+    const paymentMethod = isTemp ? 'Online Payment (Razorpay)' : 'Cash on Delivery';
+
+    const emailHtml = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>New Order Notification</title>
+      <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { width: 100%; max-width: 650px; margin: 0 auto; }
+        .header { background-color: #4A90E2; color: white; padding: 20px; text-align: center; }
+        .content { padding: 20px; }
+        .order-info { margin-bottom: 20px; padding: 15px; background-color: #f9f9f9; border-radius: 4px; }
+        .customer-info { margin-bottom: 20px; padding: 15px; background-color: #f9f9f9; border-radius: 4px; }
+        .products { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+        .products th { background-color: #4A90E2; color: white; text-align: left; padding: 10px; }
+        .summary { margin-top: 20px; margin-bottom: 20px; padding: 15px; background-color: #f9f9f9; border-radius: 4px; }
+        .footer { padding: 20px; text-align: center; font-size: 12px; color: #777; }
+        .status { display: inline-block; padding: 5px 10px; border-radius: 4px; font-weight: bold; background-color: #FFC107; color: #333; }
+        .note { margin-top: 20px; padding: 15px; background-color: #fff3cd; border-left: 4px solid #ffc107; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">
+          <h1>New Order Notification</h1>
+        </div>
+        <div class="content">
+          <div class="order-info">
+            <h2>Order Details</h2>
+            <p><strong>Order ID:</strong> ${orderId}</p>
+            ${isTemp ? `<p><strong>Razorpay Order ID:</strong> ${razorpayOrderId}</p>` :
+        `<p><strong>Transaction Number:</strong> ${order.transaction_number}</p>`}
+            <p><strong>Order Date:</strong> ${new Date(order.order_date).toLocaleString('en-IN')}</p>
+            <p><strong>Payment Method:</strong> ${paymentMethod}</p>
+            <p><strong>Status:</strong> <span class="status">${orderStatus}</span></p>
+            ${order.prescription_id ? `<p><strong>Prescription ID:</strong> ${order.prescription_id}</p>` : ''}
+            ${order.hospital_name ? `<p><strong>Hospital:</strong> ${order.hospital_name}</p>` : ''}
+            ${order.doctor_name ? `<p><strong>Doctor:</strong> ${order.doctor_name}</p>` : ''}
+          </div>
+          
+          <div class="customer-info">
+            <h2>Customer Information</h2>
+            <p><strong>Name:</strong> ${order.customer_name}</p>
+            <p><strong>Email:</strong> ${order.customer_email}</p>
+            <p><strong>Phone:</strong> ${order.customer_phone}</p>
+            
+            <h3>Billing Address</h3>
+            <p>${order.customer_address}</p>
+            <p>Pincode: ${order.customer_pincode}</p>
+            
+            <h3>Shipping Address</h3>
+            <p>${order.customer_shipping_address}</p>
+            <p>Pincode: ${order.customer_shipping_pincode}</p>
+          </div>
+          
+          <h2>Order Items</h2>
+          <table class="products">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Product</th>
+                <th>Price</th>
+                <th>Qty</th>
+                <th>Subtotal</th>
+                <th>Tax</th>
+                <th>Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${formattedProducts}
+            </tbody>
+          </table>
+          
+          <div class="summary">
+            <h2>Order Summary</h2>
+            <p><strong>Subtotal:</strong> ₹${subtotal.toFixed(2)}</p>
+            <p><strong>Tax:</strong> ₹${taxTotal.toFixed(2)}</p>
+            <p><strong>Shipping:</strong> ₹${order.shipping_charge.toFixed(2)}</p>
+            ${order.additional_charge > 0 ? `<p><strong>COD Fee:</strong> ₹${order.additional_charge.toFixed(2)}</p>` : ''}
+            ${order.coupon_discount > 0 ? `<p><strong>Discount:</strong> ₹${order.coupon_discount.toFixed(2)}</p>` : ''}
+            <p style="font-size: 18px;"><strong>Total:</strong> ₹${order.amount.toFixed(2)}</p>
+          </div>
+          
+          ${order.prescription_notes ? `
+          <div class="note">
+            <h3>Prescription Notes:</h3>
+            <p>${order.prescription_notes}</p>
+          </div>
+          ` : ''}
+          
+          <div class="note">
+            <p>This is an automated notification. Please take appropriate action on this order.</p>
+          </div>
+        </div>
+        
+        <div class="footer">
+          <p>© ${new Date().getFullYear()} Oncomart. All rights reserved.</p>
+        </div>
+      </div>
+    </body>
+    </html>
+    `;
+
+    // Send email notification
+    return await sendEmail({
+      to: adminEmail,
+      subject: emailSubject,
+      html: emailHtml,
+    });
+  } catch (error) {
+    console.error("Failed to send admin notification email:", error);
+    // Don't throw error to prevent order process from failing
+  }
+}
 
 exports.VerifyPaymentOrder = async (req, res) => {
 
@@ -794,10 +1054,11 @@ exports.VerifyPaymentOrder = async (req, res) => {
 
     const mail_options = {
       from: "Onco Health Mart <noreply@oncohealthmart.com>",
-      to: order_details_after?.customer_email,
+      to: "oncohealthmart@gmail.com",
       subject: "Order Confirmation",
       html: html_page,
     };
+
 
     await sendEmail(mail_options);
 
