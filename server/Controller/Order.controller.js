@@ -274,7 +274,7 @@ exports.CreateOrder = async (req, res) => {
       customer_shipping_phone: patientPhone,
       customer_shipping_address: address?.stree_address,
       customer_shipping_pincode: address?.pincode,
-      amount: cart?.totalPrice + shippingCharge + extraCharges,
+      amount: cart?.totalPrice,
       subtotal: cart?.totalPrice,
       order_gst: cart?.totalTax || "",
       coupon_code: cart?.couponCode || "",
@@ -1133,9 +1133,9 @@ exports.VerifyPaymentOrder = async (req, res) => {
         )}\n\n💰 *Payment Summary:*\n💵 *Subtotal:* ₹${order_details_after?.subtotal.toFixed(
           2
         )}\n🚚 *Shipping:* ₹${order_details_after?.shipping_charge.toFixed(2)}\n${order_details_after?.coupon_discount
-        ? `🎟️ *Discount (${order_details_after.coupon_code
-        }):* -₹${order_details_after.coupon_discount.toFixed(2)}`
-        : ""
+          ? `🎟️ *Discount (${order_details_after.coupon_code
+          }):* -₹${order_details_after.coupon_discount.toFixed(2)}`
+          : ""
       }\n💳 *Total:* ₹${order_details_after?.amount.toFixed(
         2
       )}\n\n💳 *Payment Method:* ${order_details_after?.payment_mode
