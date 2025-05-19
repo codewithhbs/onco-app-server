@@ -5,9 +5,9 @@ const {
   PaymentVerification,
 } = require("../service/razarpay.service");
 const cloudinary = require("cloudinary").v2;
-const html_to_pdf = require("html-pdf-node");
+
 const sendEmail = require("../utils/sendEmail");
-const fs = require("fs");
+
 const sendMessage = require("../utils/Send_Whatsapp");
 
 cloudinary.config({
@@ -229,6 +229,7 @@ exports.CreateOrder = async (req, res) => {
       doctor_name: doctorName || "",
       prescription_notes: prescriptionNotes || "",
       customer_name: patientName,
+      patient_name: patientName,
       customer_email: userExists[0]?.email_id,
       customer_phone: patientPhone,
       customer_address: address?.stree_address,
@@ -246,7 +247,13 @@ exports.CreateOrder = async (req, res) => {
       additional_charge: extraCharges,
       payment_mode: paymentOption === "Online" ? "Razorpay" : "COD",
       payment_option: paymentOption === "Online" ? "Online" : "COD",
-      status: paymentOption === "Online" ? "Pending" : "Confirmed",
+      status:
+        newRxId && paymentOption
+          ? paymentOption === "Online"
+            ? "Pending"
+            : "New"
+          : "Prescription Pending",
+
     };
 
     const ProductInOrder = cart?.items.map((item) => ({
@@ -266,23 +273,23 @@ exports.CreateOrder = async (req, res) => {
     const saveOrderSql = `
        INSERT INTO cp_order (
            order_date,orderFrom, customer_id, prescription_id, hospital_name, doctor_name, prescription_notes,
-           customer_name, customer_email, customer_phone, customer_address, customer_pincode,
+           customer_name,patient_name, customer_email, customer_phone, customer_address, customer_pincode,
            customer_shipping_name, customer_shipping_phone, customer_shipping_address, customer_shipping_pincode,
            amount, subtotal, order_gst, coupon_code, coupon_discount, shipping_charge, additional_charge,
            payment_mode, payment_option, status
        ) VALUES (
-           ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,?
+           ?, ?, ?, ?, ?, ?, ?, ?,?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,?
        )`;
 
     const saveOrderInTemp = `
        INSERT INTO cp_order_temp (
            order_date,razorpayOrderID,orderFrom, customer_id, prescription_id, hospital_name, doctor_name, prescription_notes,
-           customer_name, customer_email, customer_phone, customer_address, customer_pincode,
+           customer_name,patient_namem customer_email, customer_phone, customer_address, customer_pincode,
            customer_shipping_name, customer_shipping_phone, customer_shipping_address, customer_shipping_pincode,
            amount, subtotal, order_gst, coupon_code, coupon_discount, shipping_charge, additional_charge,
            payment_mode, payment_option, status
        ) VALUES (
-           ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,?,?
+           ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,?,?
        )`;
 
     const orderValues = Object.values(Order);
@@ -408,10 +415,16 @@ exports.CreateOrder = async (req, res) => {
           ];
 
           try {
-            const [result] = await pool.execute(sqlOrderDetails, orderDetailsValues);
+            const [result] = await pool.execute(
+              sqlOrderDetails,
+              orderDetailsValues
+            );
             console.log(`Product inserted: ${item.product_name}`, result);
           } catch (productError) {
-            console.error(`Error inserting product ${item.product_name}:`, productError);
+            console.error(
+              `Error inserting product ${item.product_name}:`,
+              productError
+            );
             // Optional: continue or abort here depending on your policy
           }
 
@@ -435,7 +448,9 @@ exports.CreateOrder = async (req, res) => {
         const userMobile = userExists[0]?.mobile;
         if (!userMobile) {
           console.error("Error: Customer phone number not found.");
-          return res.status(400).json({ error: "Customer phone number is missing." });
+          return res
+            .status(400)
+            .json({ error: "Customer phone number is missing." });
         }
 
         console.log("Sending message to:", userMobile);
@@ -454,12 +469,10 @@ exports.CreateOrder = async (req, res) => {
           orderId: newOrderId,
           orderPlaced,
         });
-
       } catch (error) {
         console.error("Error creating order:", error);
         return res.status(500).json({ error: "Internal Server Error" });
       }
-
     }
   } catch (error) {
     console.error("Error creating order:", error);
@@ -471,7 +484,7 @@ exports.CreateOrder = async (req, res) => {
 };
 
 exports.VerifyPaymentOrder = async (req, res) => {
-  console.log("i am hit payment verify");
+
   try {
     const { razorpay_payment_id, razorpay_order_id, razorpay_signature } =
       req.body;
@@ -488,13 +501,31 @@ exports.VerifyPaymentOrder = async (req, res) => {
     const verifyPayment = new PaymentVerification();
     const orderCheck = await verifyPayment.verifyPayment(data);
     // console.log("orderCheck", orderCheck);
+    // console.log("orderCheck", orderCheck);
     if (!orderCheck) {
+      const findOrderQuery = `SELECT * FROM cp_order_temp WHERE razorpayOrderID = ?`;
+      const [order] = await pool.execute(findOrderQuery, [razorpay_order_id]);
+
+      const updateOrderFailed = `
+    UPDATE cp_order_temp
+    SET status = ?, payment_status = ?, transaction_number = ?
+    WHERE razorpayOrderID = ?
+  `;
+
+      await pool.execute(updateOrderFailed, [
+        "Cancelled",
+        "Failed", // Marking status as Cancelled instead of Paid
+        razorpay_payment_id,
+        razorpay_order_id,
+      ]);
+
       return res.status(403).json({
         success: false,
         redirect: "failed_screen",
         message: "Payment Failed",
       });
     }
+
 
     const findOrderQuery = `SELECT * FROM cp_order_temp WHERE razorpayOrderID = ?`;
     const [order] = await pool.execute(findOrderQuery, [razorpay_order_id]);
@@ -522,12 +553,12 @@ exports.VerifyPaymentOrder = async (req, res) => {
     const copyOrderQuery = `
             INSERT INTO cp_order (
                 order_date, razorpayOrderID, customer_id, prescription_id, hospital_name, doctor_name, prescription_notes,
-                customer_name, customer_email, customer_phone, customer_address, customer_pincode,
+                customer_name,patient_name, customer_email, customer_phone, customer_address, customer_pincode,
                 customer_shipping_name, customer_shipping_phone, customer_shipping_address, customer_shipping_pincode,
                 amount, subtotal, order_gst, coupon_code, coupon_discount, shipping_charge, additional_charge,
                 payment_mode, payment_option, status, payment_status, transaction_number
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?,?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `;
     const orderValues = [
       tempOrder.order_date,
@@ -538,6 +569,7 @@ exports.VerifyPaymentOrder = async (req, res) => {
       tempOrder.doctor_name,
       tempOrder.prescription_notes,
       tempOrder.customer_name,
+      tempOrder.patient_name,
       tempOrder.customer_email,
       tempOrder.customer_phone,
       tempOrder.customer_address,
@@ -555,7 +587,7 @@ exports.VerifyPaymentOrder = async (req, res) => {
       tempOrder.additional_charge,
       tempOrder.payment_mode,
       tempOrder.payment_option,
-      "Confirmed",
+      "New",
       "Paid",
       razorpay_payment_id,
     ];
@@ -776,12 +808,35 @@ exports.VerifyPaymentOrder = async (req, res) => {
     });
   } catch (error) {
     console.error("Error verifying payment:", error);
+
+    try {
+      const findOrderQuery = `SELECT * FROM cp_order_temp WHERE razorpayOrderID = ?`;
+      const [order] = await pool.execute(findOrderQuery, [razorpay_order_id]);
+
+      const updateOrderFailed = `
+      UPDATE cp_order_temp
+      SET status = ?, payment_status = ?, transaction_number = ?
+      WHERE razorpayOrderID = ?
+    `;
+
+      await pool.execute(updateOrderFailed, [
+        "Cancelled",      // Main status
+        "Failed",         // Payment-specific status
+        razorpay_payment_id,
+        razorpay_order_id,
+      ]);
+    } catch (dbError) {
+      console.error("Error updating payment failure status in DB:", dbError);
+      // Optional: You can log this to an external error tracking service
+    }
+
     return res.status(500).json({
       success: false,
       message: "An error occurred while verifying payment.",
       error: error.message,
     });
   }
+
 };
 
 async function find_Details_Order(razorpay_order_id) {
