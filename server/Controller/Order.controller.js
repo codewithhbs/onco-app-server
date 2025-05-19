@@ -653,7 +653,7 @@ async function sendAdminOrderNotification(params) {
     // Get admin email from settings
     // const settingsQuery = `SELECT admin_email FROM cp_settings LIMIT 1`;
     // const [settings] = await pool.execute(settingsQuery);
-    const adminEmail = "happycoding41@gmail.com";
+    const adminEmail = "oncohealthmart@gmail.com";
 
     // Format products for email
     const formattedProducts = products
@@ -1155,7 +1155,7 @@ exports.VerifyPaymentOrder = async (req, res) => {
 
     const mail_options = {
       from: "Onco Health Mart <noreply@oncohealthmart.com>",
-      to: "happycoding41@gmail.com",
+      to: "oncohealthmart@gmail.com",
       subject: "Order Confirmation",
       html: html_page,
     };
