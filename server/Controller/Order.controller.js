@@ -244,9 +244,9 @@ exports.CreateOrder = async (req, res) => {
       coupon_discount: cart?.items?.discount || 0,
       shipping_charge: shippingCharge,
       additional_charge: extraCharges,
-      payment_mode: payment_mode,
-      payment_option: paymentOption || "Online",
-      status: "Pending",
+      payment_mode: paymentOption === "Online" ? "Razorpay" : "COD",
+      payment_option: paymentOption === "Online" ? "Online" : "COD",
+      status: paymentOption === "Online" ? "Pending" : "Confirmed",
     };
 
     const ProductInOrder = cart?.items.map((item) => ({
@@ -362,24 +362,42 @@ exports.CreateOrder = async (req, res) => {
     } else {
       try {
         // Save order details
-
         const [orderPlaced] = await pool.execute(saveOrderSql, orderValues);
 
-        // Format the query by replacing `?` placeholders with actual values
-        const lastQuery = saveOrderSql.replace(/\?/g, (_, index) =>
-          typeof orderValues[index] === "string"
-            ? `'${orderValues[index]}'`
-            : orderValues[index]
-        );
+        if (!orderPlaced?.insertId) {
+          throw new Error("Failed to retrieve insertId after saving order.");
+        }
 
+        const newOrderId = orderPlaced.insertId;
+
+        // Update order with generated ID and transaction number
+        const updateOrderQuery = `
+    UPDATE cp_order
+    SET databaseOrderID = ?, transaction_number = ?
+    WHERE order_id = ?
+  `;
+
+        await pool.execute(updateOrderQuery, [
+          newOrderId,
+          `PH-${newOrderId}`,
+          newOrderId,
+        ]);
+
+        // Log the last executed query (for debugging)
+        let i = 0;
+        const lastQuery = saveOrderSql.replace(/\?/g, () => {
+          const val = orderValues[i++];
+          return typeof val === "string" ? `'${val}'` : val;
+        });
         console.log("Last Executed Query:", lastQuery);
 
-        let items = []; // Initialize items array
-        let totalAmount = 0; // Track total amount
+        // Process each product in the order
+        let items = [];
+        let totalAmount = 0;
 
         for (const item of ProductInOrder) {
           const orderDetailsValues = [
-            orderPlaced.insertId,
+            newOrderId,
             item.product_id,
             item.product_name,
             item.product_image,
@@ -390,56 +408,58 @@ exports.CreateOrder = async (req, res) => {
           ];
 
           try {
-            const details = await pool.execute(
-              sqlOrderDetails,
-              orderDetailsValues
-            );
-            console.log(`Product inserted: ${item.product_name}`, details);
-          } catch (error) {
-            console.error(
-              `Error inserting product ${item.product_name}:`,
-              error
-            );
+            const [result] = await pool.execute(sqlOrderDetails, orderDetailsValues);
+            console.log(`Product inserted: ${item.product_name}`, result);
+          } catch (productError) {
+            console.error(`Error inserting product ${item.product_name}:`, productError);
+            // Optional: continue or abort here depending on your policy
           }
 
-          // Add item details for the message
+          // Add formatted item to the message
           items.push(
             `🛍 *${item.product_name}* - ₹${item.unit_price} x ${item.unit_quantity}`
           );
 
-          // Calculate total price
+          // Add to total amount
           totalAmount += item.unit_price * item.unit_quantity + item.tax_amount;
         }
 
-        const message = `🎉 *Order Confirmed!* \n\nThank you for shopping with *Oncomart*! 🛒\n\n✅ Your order has been successfully placed.\n\n🛍 *Order Details:* \n${items.join(
+        // Compose order confirmation message
+        const message = `🎉 *Order Confirmed!*\n\nThank you for shopping with *Oncomart*! 🛒\n\n✅ Your order has been successfully placed.\n\n🛍 *Order Details:* \n${items.join(
           "\n"
         )}\n\n🚚 We will share tracking details soon.\n📦 Stay tuned for updates!\n\nHappy Shopping! 😊`;
 
         console.log("Order confirmation message:", message);
 
-        if (!userExists[0]?.mobile) {
+        // Validate user mobile number before sending message
+        const userMobile = userExists[0]?.mobile;
+        if (!userMobile) {
           console.error("Error: Customer phone number not found.");
-          return res
-            .status(400)
-            .json({ error: "Customer phone number is missing." });
+          return res.status(400).json({ error: "Customer phone number is missing." });
         }
 
-        console.log("Sending message to:", userExists[0].mobile);
+        console.log("Sending message to:", userMobile);
 
-        const data = await sendMessage({
-          mobile: userExists[0].mobile,
+        // Send WhatsApp message
+        const sendResult = await sendMessage({
+          mobile: userMobile,
           msg: message,
         });
 
-        console.log("Message sent response:", data);
+        console.log("Message sent response:", sendResult);
 
-        return res
-          .status(201)
-          .json({ message: "Order created successfully.", orderPlaced });
+        // Respond to client
+        return res.status(201).json({
+          message: "Order created successfully.",
+          orderId: newOrderId,
+          orderPlaced,
+        });
+
       } catch (error) {
         console.error("Error creating order:", error);
         return res.status(500).json({ error: "Internal Server Error" });
       }
+
     }
   } catch (error) {
     console.error("Error creating order:", error);
@@ -451,7 +471,7 @@ exports.CreateOrder = async (req, res) => {
 };
 
 exports.VerifyPaymentOrder = async (req, res) => {
-    console.log("i am hit payment verify");
+  console.log("i am hit payment verify");
   try {
     const { razorpay_payment_id, razorpay_order_id, razorpay_signature } =
       req.body;
@@ -535,7 +555,7 @@ exports.VerifyPaymentOrder = async (req, res) => {
       tempOrder.additional_charge,
       tempOrder.payment_mode,
       tempOrder.payment_option,
-      "Pending",
+      "Confirmed",
       "Paid",
       razorpay_payment_id,
     ];
@@ -548,7 +568,7 @@ exports.VerifyPaymentOrder = async (req, res) => {
     }
 
     const updateOrderQuery2 = `
-    UPDATE cp_order ser 
+    UPDATE cp_order
     SET databaseOrderID = ?, transaction_number = ? 
     WHERE order_id = ?
     `;
@@ -596,34 +616,29 @@ exports.VerifyPaymentOrder = async (req, res) => {
             <td style="padding: 30px 20px;">
                 <div style="background: linear-gradient(135deg, #f6f9ff 0%, #f1f6ff 100%); border: 1px solid #e0e9ff; border-radius: 12px; padding: 20px; margin-bottom: 25px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
                     <h2 style="color: #1e3c72; margin: 0 0 15px 0; font-size: 24px; border-bottom: 2px solid #2a5298; padding-bottom: 10px;">Order Confirmation</h2>
-                    <p style="margin: 8px 0; color: #2a5298; font-size: 16px;">Order ID: <span style="color: #4a6fa5; font-weight: 500;">${
-                      order_details_after?.transaction_number
-                    }</span></p>
+                    <p style="margin: 8px 0; color: #2a5298; font-size: 16px;">Order ID: <span style="color: #4a6fa5; font-weight: 500;">${order_details_after?.transaction_number
+      }</span></p>
                     <p style="margin: 8px 0; color: #2a5298; font-size: 16px;">Date: <span style="color: #4a6fa5; font-weight: 500;">${new Date(
-                      order_details_after?.order_date
-                    ).toLocaleDateString("en-US", {
-                      year: "numeric",
-                      month: "long",
-                      day: "numeric",
-                    })}</span></p>
-                    <p style="margin: 8px 0; font-size: 16px;"><span style="background-color: #4CAF50; color: white; padding: 5px 12px; border-radius: 20px; font-size: 14px;">✓ ${
-                      order_details_after?.status
-                    }</span></p>
+        order_details_after?.order_date
+      ).toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      })}</span></p>
+                    <p style="margin: 8px 0; font-size: 16px;"><span style="background-color: #4CAF50; color: white; padding: 5px 12px; border-radius: 20px; font-size: 14px;">✓ ${order_details_after?.status
+      }</span></p>
                 </div>
 
                 <div style="background: linear-gradient(135deg, #f6f9ff 0%, #f1f6ff 100%); border: 1px solid #e0e9ff; border-radius: 12px; padding: 20px; margin-bottom: 25px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
                     <h3 style="color: #1e3c72; margin: 0 0 15px 0; font-size: 20px;">📍 Shipping Details</h3>
                     <p style="margin: 8px 0; color: #4a6fa5; line-height: 1.6;">
-                        <strong style="color: #2a5298; font-size: 18px;">${
-                          order_details_after?.customer_shipping_name
-                        }</strong><br>
+                        <strong style="color: #2a5298; font-size: 18px;">${order_details_after?.customer_shipping_name
+      }</strong><br>
                         ${order_details_after?.customer_shipping_address}<br>
-                        PIN: ${
-                          order_details_after?.customer_shipping_pincode
-                        }<br>
-                        📱 Phone: ${
-                          order_details_after?.customer_shipping_phone
-                        }
+                        PIN: ${order_details_after?.customer_shipping_pincode
+      }<br>
+                        📱 Phone: ${order_details_after?.customer_shipping_phone
+      }
                     </p>
                 </div>
 
@@ -636,22 +651,20 @@ exports.VerifyPaymentOrder = async (req, res) => {
                             <th style="padding: 12px; text-align: right; color: white; border-radius: 0 8px 0 0;">Price</th>
                         </tr>
                         ${order_details_after?.details
-                          .map(
-                            (item) => `
+        .map(
+          (item) => `
                         <tr style="background-color: white;">
-                            <td style="padding: 12px; border-bottom: 1px solid #e0e9ff; color: #2a5298;">${
-                              item.product_name
-                            }</td>
-                            <td style="padding: 12px; text-align: right; border-bottom: 1px solid #e0e9ff; color: #4a6fa5;">${
-                              item.unit_quantity
-                            }</td>
+                            <td style="padding: 12px; border-bottom: 1px solid #e0e9ff; color: #2a5298;">${item.product_name
+            }</td>
+                            <td style="padding: 12px; text-align: right; border-bottom: 1px solid #e0e9ff; color: #4a6fa5;">${item.unit_quantity
+            }</td>
                             <td style="padding: 12px; text-align: right; border-bottom: 1px solid #e0e9ff; color: #4a6fa5;">₹${item.unit_price.toFixed(
-                              2
-                            )}</td>
+              2
+            )}</td>
                         </tr>
                         `
-                          )
-                          .join("")}
+        )
+        .join("")}
                     </table>
                 </div>
 
@@ -660,42 +673,39 @@ exports.VerifyPaymentOrder = async (req, res) => {
                         <tr>
                             <td style="padding: 8px 0; color: #2a5298;">Subtotal:</td>
                             <td style="text-align: right; color: #4a6fa5;">₹${order_details_after?.subtotal.toFixed(
-                              2
-                            )}</td>
+          2
+        )}</td>
                         </tr>
                         <tr>
                             <td style="padding: 8px 0; color: #2a5298;">Shipping:</td>
                             <td style="text-align: right; color: #4a6fa5;">₹${order_details_after?.shipping_charge.toFixed(
-                              2
-                            )}</td>
+          2
+        )}</td>
                         </tr>
-                        ${
-                          order_details_after?.coupon_discount
-                            ? `
+                        ${order_details_after?.coupon_discount
+        ? `
                         <tr>
-                            <td style="padding: 8px 0; color: #2a5298;">Discount (${
-                              order_details_after.coupon_code
-                            }):</td>
+                            <td style="padding: 8px 0; color: #2a5298;">Discount (${order_details_after.coupon_code
+        }):</td>
                             <td style="text-align: right; color: #4CAF50;">-₹${order_details_after.coupon_discount.toFixed(
-                              2
-                            )}</td>
+          2
+        )}</td>
                         </tr>
                         `
-                            : ""
-                        }
+        : ""
+      }
                         <tr style="font-weight: bold; font-size: 18px;">
                             <td style="padding: 15px 0; border-top: 2px solid #2a5298; color: #1e3c72;">Total:</td>
                             <td style="text-align: right; padding: 15px 0; border-top: 2px solid #2a5298; color: #1e3c72;">₹${order_details_after?.amount.toFixed(
-                              2
-                            )}</td>
+        2
+      )}</td>
                         </tr>
                     </table>
                 </div>
 
                 <div style="margin-top: 20px; padding: 20px; background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%); border-radius: 12px; color: white;">
-                    <p style="margin: 5px 0;">💳 Payment Method: ${
-                      order_details_after?.payment_mode
-                    }</p>
+                    <p style="margin: 5px 0;">💳 Payment Method: ${order_details_after?.payment_mode
+      }</p>
                 </div>
 
                 <div style="margin-top: 30px; text-align: center; background: linear-gradient(135deg, #f6f9ff 0%, #f1f6ff 100%); padding: 20px; border-radius: 12px;">
@@ -707,46 +717,36 @@ exports.VerifyPaymentOrder = async (req, res) => {
     </table>
         </body>`;
 
-    const message = `🛒 *Order Confirmation*\n\n📌 *Order ID:* ${
-      order_details_after?.transaction_number
-    }\n📅 *Date:* ${new Date(
-      order_details_after?.order_date
-    ).toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-    })}\n✅ *Status:* ${
-      order_details_after?.status
-    }\n\n📍 *Shipping Details:*\n👤 *Name:* ${
-      order_details_after?.customer_shipping_name
-    }\n🏠 *Address:* ${
-      order_details_after?.customer_shipping_address
-    }\n📮 *PIN:* ${
-      order_details_after?.customer_shipping_pincode
-    }\n📞 *Phone:* ${
-      order_details_after?.customer_shipping_phone
-    }\n\n🛍️ *Order Details:*\n${order_details_after?.details
-      .map(
-        (item) =>
-          `🔹 *${item.product_name}*\n   - Quantity: ${
-            item.unit_quantity
-          }\n   - Price: ₹${item.unit_price.toFixed(2)}`
-      )
-      .join(
-        "\n"
-      )}\n\n💰 *Payment Summary:*\n💵 *Subtotal:* ₹${order_details_after?.subtotal.toFixed(
-      2
-    )}\n🚚 *Shipping:* ₹${order_details_after?.shipping_charge.toFixed(2)}\n${
-      order_details_after?.coupon_discount
-        ? `🎟️ *Discount (${
-            order_details_after.coupon_code
+    const message = `🛒 *Order Confirmation*\n\n📌 *Order ID:* ${order_details_after?.transaction_number
+      }\n📅 *Date:* ${new Date(
+        order_details_after?.order_date
+      ).toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      })}\n✅ *Status:* ${order_details_after?.status
+      }\n\n📍 *Shipping Details:*\n👤 *Name:* ${order_details_after?.customer_shipping_name
+      }\n🏠 *Address:* ${order_details_after?.customer_shipping_address
+      }\n📮 *PIN:* ${order_details_after?.customer_shipping_pincode
+      }\n📞 *Phone:* ${order_details_after?.customer_shipping_phone
+      }\n\n🛍️ *Order Details:*\n${order_details_after?.details
+        .map(
+          (item) =>
+            `🔹 *${item.product_name}*\n   - Quantity: ${item.unit_quantity
+            }\n   - Price: ₹${item.unit_price.toFixed(2)}`
+        )
+        .join(
+          "\n"
+        )}\n\n💰 *Payment Summary:*\n💵 *Subtotal:* ₹${order_details_after?.subtotal.toFixed(
+          2
+        )}\n🚚 *Shipping:* ₹${order_details_after?.shipping_charge.toFixed(2)}\n${order_details_after?.coupon_discount
+          ? `🎟️ *Discount (${order_details_after.coupon_code
           }):* -₹${order_details_after.coupon_discount.toFixed(2)}`
-        : ""
-    }\n💳 *Total:* ₹${order_details_after?.amount.toFixed(
-      2
-    )}\n\n💳 *Payment Method:* ${
-      order_details_after?.payment_mode
-    }\n\n🙏 *Thank you for shopping with Onco Health Mart! ❤️*\n📞 For any queries, contact our customer service.`;
+          : ""
+      }\n💳 *Total:* ₹${order_details_after?.amount.toFixed(
+        2
+      )}\n\n💳 *Payment Method:* ${order_details_after?.payment_mode
+      }\n\n🙏 *Thank you for shopping with Onco Health Mart! ❤️*\n📞 For any queries, contact our customer service.`;
 
     console.log("Order confirmation message:", message);
 
