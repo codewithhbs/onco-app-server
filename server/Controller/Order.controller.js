@@ -161,7 +161,10 @@ exports.CreateOrder = async (req, res) => {
     if (!userId) {
       return res
         .status(401)
-        .json({ message: "Authentication required. Please log in to complete the order." });
+        .json({
+          message:
+            "Authentication required. Please log in to complete the order.",
+        });
     }
 
     // Extract request data
@@ -194,8 +197,9 @@ exports.CreateOrder = async (req, res) => {
 
     // Check if user exists in the database
     const checkUserSql = `SELECT * FROM cp_customer WHERE customer_id = ?`;
-    const [userExists] = await pool.execute(checkUserSql, [userId])
-      .catch(err => {
+    const [userExists] = await pool
+      .execute(checkUserSql, [userId])
+      .catch((err) => {
         console.error("Database error when checking user:", err);
         throw new Error("Failed to verify user information.");
       });
@@ -208,8 +212,9 @@ exports.CreateOrder = async (req, res) => {
     let newRxId = null;
     if (Rx_id) {
       const prescriptionQuery = `SELECT * FROM cp_app_prescription WHERE genreate_presc_order_id = ?`;
-      const [prescription] = await pool.execute(prescriptionQuery, [Rx_id])
-        .catch(err => {
+      const [prescription] = await pool
+        .execute(prescriptionQuery, [Rx_id])
+        .catch((err) => {
           console.error("Database error when checking prescription:", err);
           throw new Error("Failed to verify prescription information.");
         });
@@ -223,14 +228,15 @@ exports.CreateOrder = async (req, res) => {
 
     // Get system settings
     const settingsQuery = `SELECT * FROM cp_settings`;
-    const [settings] = await pool.execute(settingsQuery)
-      .catch(err => {
-        console.error("Database error when fetching settings:", err);
-        throw new Error("Failed to retrieve system settings.");
-      });
+    const [settings] = await pool.execute(settingsQuery).catch((err) => {
+      console.error("Database error when fetching settings:", err);
+      throw new Error("Failed to retrieve system settings.");
+    });
 
     if (!settings || settings.length === 0) {
-      return res.status(500).json({ message: "System settings not available." });
+      return res
+        .status(500)
+        .json({ message: "System settings not available." });
     }
 
     const setting = settings[0];
@@ -244,7 +250,10 @@ exports.CreateOrder = async (req, res) => {
 
     // Create timestamp for order tracking
     const orderDate = new Date();
-    const formattedDate = orderDate.toISOString().slice(0, 19).replace('T', ' ');
+    const formattedDate = orderDate
+      .toISOString()
+      .slice(0, 19)
+      .replace("T", " ");
 
     // Prepare order object
     const Order = {
@@ -364,8 +373,9 @@ exports.CreateOrder = async (req, res) => {
         const orderValuesTemp = Object.values(TempOrder);
 
         // Save temporary order
-        const [saveOrder] = await pool.execute(saveOrderInTemp, orderValuesTemp)
-          .catch(err => {
+        const [saveOrder] = await pool
+          .execute(saveOrderInTemp, orderValuesTemp)
+          .catch((err) => {
             console.error("Database error when saving temporary order:", err);
             throw new Error("Failed to create temporary order.");
           });
@@ -383,13 +393,17 @@ exports.CreateOrder = async (req, res) => {
             item.tax_amount,
           ];
 
-          await pool.execute(sqlOrderDetails, orderDetailsValues)
-            .catch(err => {
-              console.error(`Database error when saving product ${item.product_name}:`, err);
+          await pool
+            .execute(sqlOrderDetails, orderDetailsValues)
+            .catch((err) => {
+              console.error(
+                `Database error when saving product ${item.product_name}:`,
+                err
+              );
               // Continue with other products even if one fails
             });
         }
-
+        console.log("Order from  COD TempOrder", TempOrder);
         // Send admin notification for pending online payment
         await sendAdminOrderNotification({
           order: TempOrder,
@@ -397,7 +411,7 @@ exports.CreateOrder = async (req, res) => {
           customer: userExists[0],
           isTemp: true,
           orderId: saveOrder.insertId,
-          razorpayOrderId: sendOrder.id
+          razorpayOrderId: sendOrder.id,
         });
 
         return res.status(201).json({
@@ -408,7 +422,7 @@ exports.CreateOrder = async (req, res) => {
         console.error("Error processing online payment:", error);
         return res.status(500).json({
           message: "Failed to process payment request.",
-          error: error.message
+          error: error.message,
         });
       }
     } else {
@@ -417,8 +431,9 @@ exports.CreateOrder = async (req, res) => {
         const orderValues = Object.values(Order);
 
         // Save order
-        const [orderPlaced] = await pool.execute(saveOrderSql, orderValues)
-          .catch(err => {
+        const [orderPlaced] = await pool
+          .execute(saveOrderSql, orderValues)
+          .catch((err) => {
             console.error("Database error when saving order:", err);
             throw new Error("Failed to create order.");
           });
@@ -437,14 +452,19 @@ exports.CreateOrder = async (req, res) => {
           WHERE order_id = ?
         `;
 
-        await pool.execute(updateOrderQuery, [
-          newOrderId,
-          transactionNumber,
-          newOrderId,
-        ]).catch(err => {
-          console.error("Database error when updating order with transaction number:", err);
-          // Continue even if this update fails
-        });
+        await pool
+          .execute(updateOrderQuery, [
+            newOrderId,
+            transactionNumber,
+            newOrderId,
+          ])
+          .catch((err) => {
+            console.error(
+              "Database error when updating order with transaction number:",
+              err
+            );
+            // Continue even if this update fails
+          });
 
         // Process each product in the order
         let items = [];
@@ -465,7 +485,10 @@ exports.CreateOrder = async (req, res) => {
           try {
             await pool.execute(sqlOrderDetails, orderDetailsValues);
           } catch (productError) {
-            console.error(`Error inserting product ${item.product_name}:`, productError);
+            console.error(
+              `Error inserting product ${item.product_name}:`,
+              productError
+            );
             // Continue with other products even if one fails
           }
 
@@ -475,11 +498,11 @@ exports.CreateOrder = async (req, res) => {
             price: item.unit_price,
             quantity: item.unit_quantity,
             tax: item.tax_amount,
-            total: (item.unit_price * item.unit_quantity) + item.tax_amount
+            total: item.unit_price * item.unit_quantity + item.tax_amount,
           });
 
           // Add to total amount
-          totalAmount += (item.unit_price * item.unit_quantity) + item.tax_amount;
+          totalAmount += item.unit_price * item.unit_quantity + item.tax_amount;
         }
 
         // Compose WhatsApp order confirmation message
@@ -491,7 +514,7 @@ exports.CreateOrder = async (req, res) => {
           shipping: shippingCharge,
           extraCharges,
           total: Order.amount,
-          paymentMethod: "Cash on Delivery"
+          paymentMethod: "Cash on Delivery",
         });
 
         // Send WhatsApp message to customer
@@ -503,31 +526,39 @@ exports.CreateOrder = async (req, res) => {
               msg: message,
             });
           } catch (messageError) {
-            console.error("Failed to send WhatsApp notification:", messageError);
+            console.error(
+              "Failed to send WhatsApp notification:",
+              messageError
+            );
             // Continue even if message fails
           }
         }
 
+        console.log("Order from  COD order", Order);
         // Send email notification to admin
         await sendAdminOrderNotification({
-          order: { ...Order, order_id: newOrderId, transaction_number: transactionNumber },
+          order: {
+            ...Order,
+            order_id: newOrderId,
+            transaction_number: transactionNumber,
+          },
           products: ProductInOrder,
           customer: userExists[0],
           isTemp: false,
-          orderId: newOrderId
+          orderId: newOrderId,
         });
 
         // Respond to client
         return res.status(201).json({
           message: "Order created successfully.",
           orderId: newOrderId,
-          transactionNumber
+          transactionNumber,
         });
       } catch (error) {
         console.error("Error creating COD order:", error);
         return res.status(500).json({
           message: "An error occurred while creating the order.",
-          error: error.message
+          error: error.message,
         });
       }
     }
@@ -540,7 +571,6 @@ exports.CreateOrder = async (req, res) => {
   }
 };
 
-
 function generateOrderConfirmationMessage(params) {
   const {
     orderNumber,
@@ -550,13 +580,17 @@ function generateOrderConfirmationMessage(params) {
     shipping,
     extraCharges,
     total,
-    paymentMethod
+    paymentMethod,
   } = params;
 
   // Format items list
-  const itemsList = items.map(item =>
-    `• *${item.product_name}*\n  ₹${item.unit_price} × ${item.unit_quantity} = ₹${(item.unit_price * item.unit_quantity).toFixed(2)}`
-  ).join('\n');
+  const itemsList = items
+    .map(
+      (item) =>
+        `• *${item.product_name}*\n  ₹${item.unit_price} × ${item.unit_quantity
+        } = ₹${(item.unit_price * item.unit_quantity).toFixed(2)}`
+    )
+    .join("\n");
 
   // Build full message
   return `🎉 *Order Confirmed!* 🎉
@@ -566,7 +600,11 @@ Dear *${customerName}*,
 Thank you for shopping with *Oncomart*! Your order has been successfully placed.
 
 *Order #:* ${orderNumber}
-*Date:* ${new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+*Date:* ${new Date().toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  })}
 
 *Your Order:*
 ${itemsList}
@@ -574,7 +612,7 @@ ${itemsList}
 *Order Summary:*
 Subtotal: ₹${subtotal.toFixed(2)}
 Shipping: ₹${shipping.toFixed(2)}
-${extraCharges > 0 ? `COD Fee: ₹${extraCharges.toFixed(2)}\n` : ''}
+${extraCharges > 0 ? `COD Fee: ₹${extraCharges.toFixed(2)}\n` : ""}
 *Total Amount:* ₹${total.toFixed(2)}
 
 *Payment Method:* ${paymentMethod}
@@ -591,43 +629,70 @@ Thank you for trusting Oncomart for your healthcare needs. We value your health 
 Stay healthy! ❤️`;
 }
 
-
 async function sendAdminOrderNotification(params) {
-  const { order, products, customer, isTemp, orderId, razorpayOrderId = null } = params;
+  const {
+    order,
+    products,
+    customer,
+    isTemp,
+    orderId,
+    razorpayOrderId = null,
+  } = params;
 
   try {
     // Calculate totals
-    const subtotal = products.reduce((sum, item) => sum + (item.unit_price * item.unit_quantity), 0);
-    const taxTotal = products.reduce((sum, item) => sum + (item.tax_amount || 0), 0);
+    const subtotal = products.reduce(
+      (sum, item) => sum + item.unit_price * item.unit_quantity,
+      0
+    );
+    const taxTotal = products.reduce(
+      (sum, item) => sum + (item.tax_amount || 0),
+      0
+    );
 
     // Get admin email from settings
-    const settingsQuery = `SELECT admin_email FROM cp_settings LIMIT 1`;
-    const [settings] = await pool.execute(settingsQuery);
-    const adminEmail ='happycoding41@gmail.com';
+    // const settingsQuery = `SELECT admin_email FROM cp_settings LIMIT 1`;
+    // const [settings] = await pool.execute(settingsQuery);
+    const adminEmail = "happycoding41@gmail.com";
 
     // Format products for email
-    const formattedProducts = products.map((product, index) => {
-      const totalPrice = product.unit_price * product.unit_quantity;
-      return `
+    const formattedProducts = products
+      .map((product, index) => {
+        const totalPrice = product.unit_price * product.unit_quantity;
+        return `
         <tr>
-          <td style="padding: 10px; border-bottom: 1px solid #ddd;">${index + 1}</td>
-          <td style="padding: 10px; border-bottom: 1px solid #ddd;">${product.product_name}</td>
-          <td style="padding: 10px; border-bottom: 1px solid #ddd;">₹${product.unit_price.toFixed(2)}</td>
-          <td style="padding: 10px; border-bottom: 1px solid #ddd;">${product.unit_quantity}</td>
-          <td style="padding: 10px; border-bottom: 1px solid #ddd;">₹${totalPrice.toFixed(2)}</td>
-          <td style="padding: 10px; border-bottom: 1px solid #ddd;">₹${product.tax_amount.toFixed(2)}</td>
-          <td style="padding: 10px; border-bottom: 1px solid #ddd;">₹${(totalPrice + product.tax_amount).toFixed(2)}</td>
+          <td style="padding: 10px; border-bottom: 1px solid #ddd;">${index + 1
+          }</td>
+          <td style="padding: 10px; border-bottom: 1px solid #ddd;">${product.product_name
+          }</td>
+          <td style="padding: 10px; border-bottom: 1px solid #ddd;">₹${product.unit_price.toFixed(
+            2
+          )}</td>
+          <td style="padding: 10px; border-bottom: 1px solid #ddd;">${product.unit_quantity
+          }</td>
+          <td style="padding: 10px; border-bottom: 1px solid #ddd;">₹${totalPrice.toFixed(
+            2
+          )}</td>
+          <td style="padding: 10px; border-bottom: 1px solid #ddd;">₹${product.tax_amount.toFixed(
+            2
+          )}</td>
+          <td style="padding: 10px; border-bottom: 1px solid #ddd;">₹${(
+            totalPrice + product.tax_amount
+          ).toFixed(2)}</td>
         </tr>
       `;
-    }).join('');
+      })
+      .join("");
 
     // Build email HTML
     const emailSubject = isTemp
       ? `New Pending Online Order #${orderId} (Razorpay: ${razorpayOrderId})`
       : `New COD Order #${orderId} (${order.transaction_number})`;
 
-    const orderStatus = isTemp ? 'Pending Payment' : 'New';
-    const paymentMethod = isTemp ? 'Online Payment (Razorpay)' : 'Cash on Delivery';
+    const orderStatus = isTemp ? "Pending Payment" : "New";
+    const paymentMethod = isTemp
+      ? "Online Payment (Razorpay)"
+      : "Cash on Delivery";
 
     const emailHtml = `
     <!DOCTYPE html>
@@ -658,14 +723,27 @@ async function sendAdminOrderNotification(params) {
           <div class="order-info">
             <h2>Order Details</h2>
             <p><strong>Order ID:</strong> ${orderId}</p>
-            ${isTemp ? `<p><strong>Razorpay Order ID:</strong> ${razorpayOrderId}</p>` :
-        `<p><strong>Transaction Number:</strong> ${order.transaction_number}</p>`}
-            <p><strong>Order Date:</strong> ${new Date(order.order_date).toLocaleString('en-IN')}</p>
+            ${isTemp
+        ? `<p><strong>Razorpay Order ID:</strong> ${razorpayOrderId}</p>`
+        : `<p><strong>Transaction Number:</strong> ${order.transaction_number}</p>`
+      }
+            <p><strong>Order Date:</strong> ${new Date(
+        order.order_date
+      ).toLocaleString("en-IN")}</p>
             <p><strong>Payment Method:</strong> ${paymentMethod}</p>
             <p><strong>Status:</strong> <span class="status">${orderStatus}</span></p>
-            ${order.prescription_id ? `<p><strong>Prescription ID:</strong> ${order.prescription_id}</p>` : ''}
-            ${order.hospital_name ? `<p><strong>Hospital:</strong> ${order.hospital_name}</p>` : ''}
-            ${order.doctor_name ? `<p><strong>Doctor:</strong> ${order.doctor_name}</p>` : ''}
+            ${order.prescription_id
+        ? `<p><strong>Prescription ID:</strong> ${order.prescription_id}</p>`
+        : ""
+      }
+            ${order.hospital_name
+        ? `<p><strong>Hospital:</strong> ${order.hospital_name}</p>`
+        : ""
+      }
+            ${order.doctor_name
+        ? `<p><strong>Doctor:</strong> ${order.doctor_name}</p>`
+        : ""
+      }
           </div>
           
           <div class="customer-info">
@@ -705,18 +783,35 @@ async function sendAdminOrderNotification(params) {
             <h2>Order Summary</h2>
             <p><strong>Subtotal:</strong> ₹${subtotal.toFixed(2)}</p>
             <p><strong>Tax:</strong> ₹${taxTotal.toFixed(2)}</p>
-            <p><strong>Shipping:</strong> ₹${order.shipping_charge.toFixed(2)}</p>
-            ${order.additional_charge > 0 ? `<p><strong>COD Fee:</strong> ₹${order.additional_charge.toFixed(2)}</p>` : ''}
-            ${order.coupon_discount > 0 ? `<p><strong>Discount:</strong> ₹${order.coupon_discount.toFixed(2)}</p>` : ''}
-            <p style="font-size: 18px;"><strong>Total:</strong> ₹${order.amount.toFixed(2)}</p>
+            <p><strong>Shipping:</strong> ₹${order.shipping_charge.toFixed(
+        2
+      )}</p>
+            ${order.additional_charge > 0
+        ? `<p><strong>COD Fee:</strong> ₹${order.additional_charge.toFixed(
+          2
+        )}</p>`
+        : ""
+      }
+            ${order.coupon_discount > 0
+        ? `<p><strong>Discount:</strong> ₹${order.coupon_discount.toFixed(
+          2
+        )}</p>`
+        : ""
+      }
+            <p style="font-size: 18px;"><strong>Total:</strong> ₹${order.amount.toFixed(
+        2
+      )}</p>
           </div>
           
-          ${order.prescription_notes ? `
+          ${order.prescription_notes
+        ? `
           <div class="note">
             <h3>Prescription Notes:</h3>
             <p>${order.prescription_notes}</p>
           </div>
-          ` : ''}
+          `
+        : ""
+      }
           
           <div class="note">
             <p>This is an automated notification. Please take appropriate action on this order.</p>
@@ -731,12 +826,18 @@ async function sendAdminOrderNotification(params) {
     </html>
     `;
 
-    // Send email notification
-    return await sendEmail({
-      to: adminEmail,
-      subject: emailSubject,
-      html: emailHtml,
-    });
+    try {
+      await sendEmail({
+        to: adminEmail,
+        subject: emailSubject,
+        html: emailHtml,
+      });
+      console.log("Admin notification email sent successfully.");
+      return
+    } catch (emailError) {
+      console.error("Error sending admin notification email:", emailError);
+      // Do not throw the error to avoid interrupting the order process
+    }
   } catch (error) {
     console.error("Failed to send admin notification email:", error);
     // Don't throw error to prevent order process from failing
@@ -744,7 +845,6 @@ async function sendAdminOrderNotification(params) {
 }
 
 exports.VerifyPaymentOrder = async (req, res) => {
-
   try {
     const { razorpay_payment_id, razorpay_order_id, razorpay_signature } =
       req.body;
@@ -785,7 +885,6 @@ exports.VerifyPaymentOrder = async (req, res) => {
         message: "Payment Failed",
       });
     }
-
 
     const findOrderQuery = `SELECT * FROM cp_order_temp WHERE razorpayOrderID = ?`;
     const [order] = await pool.execute(findOrderQuery, [razorpay_order_id]);
@@ -851,6 +950,8 @@ exports.VerifyPaymentOrder = async (req, res) => {
       "Paid",
       razorpay_payment_id,
     ];
+
+    console.log("Order from orderValues", orderValues);
 
     const [insertResult] = await pool.execute(copyOrderQuery, orderValues);
     const newOrderId = insertResult.insertId;
@@ -1032,9 +1133,9 @@ exports.VerifyPaymentOrder = async (req, res) => {
         )}\n\n💰 *Payment Summary:*\n💵 *Subtotal:* ₹${order_details_after?.subtotal.toFixed(
           2
         )}\n🚚 *Shipping:* ₹${order_details_after?.shipping_charge.toFixed(2)}\n${order_details_after?.coupon_discount
-          ? `🎟️ *Discount (${order_details_after.coupon_code
-          }):* -₹${order_details_after.coupon_discount.toFixed(2)}`
-          : ""
+        ? `🎟️ *Discount (${order_details_after.coupon_code
+        }):* -₹${order_details_after.coupon_discount.toFixed(2)}`
+        : ""
       }\n💳 *Total:* ₹${order_details_after?.amount.toFixed(
         2
       )}\n\n💳 *Payment Method:* ${order_details_after?.payment_mode
@@ -1059,7 +1160,6 @@ exports.VerifyPaymentOrder = async (req, res) => {
       html: html_page,
     };
 
-
     await sendEmail(mail_options);
 
     return res.status(200).json({
@@ -1081,8 +1181,8 @@ exports.VerifyPaymentOrder = async (req, res) => {
     `;
 
       await pool.execute(updateOrderFailed, [
-        "Cancelled",      // Main status
-        "Failed",         // Payment-specific status
+        "Cancelled", // Main status
+        "Failed", // Payment-specific status
         razorpay_payment_id,
         razorpay_order_id,
       ]);
@@ -1097,7 +1197,6 @@ exports.VerifyPaymentOrder = async (req, res) => {
       error: error.message,
     });
   }
-
 };
 
 async function find_Details_Order(razorpay_order_id) {
@@ -1290,6 +1389,7 @@ exports.Create_repeat_Order = async (req, res) => {
       payment_option: cart?.payment_option || "Online",
       status: "Pending",
     };
+    console.log("Order from cart", cart);
 
     const ProductInOrder = orderDetails.map((item) => ({
       product_id: item?.product_id,
