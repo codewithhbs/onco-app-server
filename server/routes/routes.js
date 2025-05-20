@@ -3,7 +3,7 @@ const multer = require('multer')
 const { register, VerifyOtp, login, logout, forgotPassword, updateDetails, getMyProfile, resendOtp, PrsecRegister, delete_user_profile } = require('../Controller/user.controller');
 const { Protect } = require('../Middleware/Protect');
 const { getAllCategory, GetAllProduct, getSingleProduct, GetAllActiveBanners, GetContentOfPage, getSearchByInput, getReviews, getNews, getMedicinesBySaltName } = require('../Controller/get.controller');
-const { GetMyOrder, UploadPrescription, checkCouponCode, CreateOrder, VerifyPaymentOrder, Create_repeat_Order, get_all_order } = require('../Controller/Order.controller');
+const { GetMyOrder, UploadPrescription, checkCouponCode, CreateOrder, VerifyPaymentOrder, Create_repeat_Order, get_all_order, changeOrderStatus } = require('../Controller/Order.controller');
 const { addNewAddress, getMyAddresses, updateMyAddress, deleteMyAddress, check_area_availability, getAllAddresses, updateAnyAddress, deleteAnyAddress, getSingleAddresses } = require('../Controller/address.controller');
 const { FindAllCoupons, createCoupon, getAllCoupons, getSingleCoupon, updateCoupon, deleteCoupon } = require('../Controller/Coupons.Controller');
 const { upload_prescriptions, get_my_uploaded_presc, getAllPrescriptions, getPrescriptionById, deletePrescriptionById } = require('../Controller/Prescriptions');
@@ -45,6 +45,7 @@ router.get('/get-content', GetContentOfPage)
 //Order routes
 router.get('/get-my-order', Protect, GetMyOrder)
 router.get('/get-all-order', get_all_order)
+router.post('/chanage-order-status', changeOrderStatus)
 
 router.post('/apply-coupon_code', checkCouponCode)
 
@@ -91,7 +92,7 @@ router.delete('/delete-hot-deals', DeleteDeal)
 router.put('/update-hot-deals', upload.single('file'), UpdateDeal)
 
 // Get Medicne by salt name
-router.get('/medicne/by-salt',getMedicinesBySaltName)
+router.get('/medicne/by-salt', getMedicinesBySaltName)
 
 
 
