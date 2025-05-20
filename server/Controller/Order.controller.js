@@ -1153,14 +1153,28 @@ exports.VerifyPaymentOrder = async (req, res) => {
     const deleteTempOrderQuery = `DELETE FROM cp_order_temp WHERE razorpayOrderID = ?`;
     await pool.execute(deleteTempOrderQuery, [razorpay_order_id]);
 
-    const mail_options = {
-      from: "Onco Health Mart <noreply@oncohealthmart.com>",
-      to: "oncohealthmart@gmail.com",
-      subject: "Order Confirmation",
-      html: html_page,
-    };
+    try {
+      const mail_options = {
+        from: "Onco Health Mart <noreply@oncohealthmart.com>",
+        to: "oncohealthmart@gmail.com",
+        subject: "Order Confirmation",
+        html: html_page,
+      };
+      const mail_options_for_user = {
+        from: "Onco Health Mart <noreply@oncohealthmart.com>",
+        to: order_details_after.customer_email || tempOrder?.customer_email,
+        subject: "Order Confirmation",
+        html: html_page,
+      };
 
-    await sendEmail(mail_options);
+
+      await sendEmail(mail_options);
+      console.log("Admin Mail has been send")
+      await sendEmail(mail_options_for_user);
+      console.log("user Mail has been send")
+    } catch (error) {
+
+    }
 
     return res.status(200).json({
       success: true,
