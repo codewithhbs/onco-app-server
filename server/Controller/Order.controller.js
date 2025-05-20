@@ -1706,3 +1706,48 @@ exports.changeOrderStatus = async (req, res) => {
     });
   }
 }
+
+
+
+
+
+
+exports.changePrescriptionStatus = async (req, res) => {
+  try {
+    const { orderId, status } = req.body;
+
+    if (!orderId) {
+      return res.status(403).json({
+        success: false,
+        message: 'Please provide Order ID in the request body'
+      });
+    }
+
+    const findOrder = `SELECT * FROM cp_app_prescription WHERE id = ?`;
+    const [order] = await pool.execute(findOrder, [orderId]);
+
+    if (order.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Order with this Order ID not found'
+      });
+    }
+
+    const updateQuery = `UPDATE cp_app_prescription SET status = ? WHERE id = ?`;
+    const [orderUpdate] = await pool.execute(updateQuery, [status, orderId]);
+
+    return res.status(200).json({
+      success: true,
+      message: 'prescription status updated successfully',
+      data: orderUpdate
+    });
+
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({
+      success: false,
+      message: 'Internal Server Error',
+      error: error.message
+    });
+  }
+}
