@@ -597,7 +597,7 @@ function generateOrderConfirmationMessage(params) {
 
 Dear *${customerName}*,
 
-Thank you for shopping with *Oncomart*! Your order has been successfully placed.
+Thank you for shopping with *Onco Healthmart*! Your order has been successfully placed.
 
 *Order #:* ${orderNumber}
 *Date:* ${new Date().toLocaleDateString("en-IN", {
@@ -621,10 +621,10 @@ ${extraCharges > 0 ? `COD Fee: ₹${extraCharges.toFixed(2)}\n` : ""}
 Our team will process your order shortly. We'll share tracking details once your order ships.
 
 For any questions regarding your order, please contact our customer support at:
-📞 +91-XXXXXXXXXX
-📧 support@oncomart.com
+📞 +91-9212292778
+📧 oncohealthmart@gmail.com
 
-Thank you for trusting Oncomart for your healthcare needs. We value your health and well-being.
+Thank you for trusting Onco Healthmart for your healthcare needs. We value your health and well-being.
 
 Stay healthy! ❤️`;
 }
@@ -819,7 +819,7 @@ async function sendAdminOrderNotification(params) {
         </div>
         
         <div class="footer">
-          <p>© ${new Date().getFullYear()} Oncomart. All rights reserved.</p>
+          <p>© ${new Date().getFullYear()} Onco Healthmart. All rights reserved.</p>
         </div>
       </div>
     </body>
