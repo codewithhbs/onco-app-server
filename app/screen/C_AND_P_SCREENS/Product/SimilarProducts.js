@@ -20,7 +20,7 @@ export default function SimilarProducts({ id, salt }) {
     const fetchSimilarProducts = async () => {
         try {
             const response = await axios.get(
-                `http://192.168.1.17:9500/api/v1/medicne/by-salt?salt=${encodeURIComponent(salt)}&id=${id}`
+                `https://api.oncohealthmart.com/api/v1/medicne/by-salt?salt=${encodeURIComponent(salt)}&id=${id}`
             );
             setSimilarProducts(response.data.data);
             setError(null);

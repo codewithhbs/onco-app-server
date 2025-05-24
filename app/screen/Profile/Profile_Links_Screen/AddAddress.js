@@ -58,7 +58,7 @@ export default function AddAddress({ visible, onClose, onSuccess }) {
     return (
         <View style={styles.modalContainer}>
             <View style={styles.modalContent}>
-                <Text style={styles.header}>Add New Address</Text>
+                <Text style={styles.header}>Add New Address </Text>
 
                 <TextInput
                     style={styles.input}

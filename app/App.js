@@ -1,4 +1,4 @@
-import React,{ useCallback, useEffect, useState, useRef } from "react";
+import React, { useCallback, useEffect, useState, useRef } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { NavigationContainer, useNavigationContainerRef } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
@@ -51,6 +51,7 @@ import ProductInfo from "./screen/C_AND_P_SCREENS/Product/ProductInfo";
 import MyPrescriptions from "./screen/Profile/Profile_Links_Screen/MyPrescriptions";
 import Edit_Profile from "./screen/Profile/Profile_Links_Screen/Edit_Profile";
 import AllCoupons from "./screen/Cart/AllCoupons";
+import CheckAppUpdate from "./context/CheckAppUpdate";
 
 // Prevent the splash screen from auto-hiding
 SplashScreen.preventAutoHideAsync().catch(() => {
@@ -132,7 +133,7 @@ const MemorizedNavigator = React.memo(({ initialRoute, ...props }) => {
       <Stack.Screen name="NewsDetail" options={{ headerShown: false, title: "News Detail" }} component={MemoizedScreens.NewsDetail} />
       <Stack.Screen name="About" options={{ headerShown: true, title: "About Onco HealthMart" }} component={MemoizedScreens.About} />
       <Stack.Screen name="Profile" options={{ headerShown: false, title: "Profile" }} component={MemoizedScreens.Profile} />
-      <Stack.Screen name="Edit-Profile" options={{ headerShown: Platform.OS === "ios" ? true:false, title: "Edit Profile" }} component={MemoizedScreens.EditProfile} />
+      <Stack.Screen name="Edit-Profile" options={{ headerShown: Platform.OS === "ios" ? true : false, title: "Edit Profile" }} component={MemoizedScreens.EditProfile} />
       <Stack.Screen name="Orders" options={{ headerShown: false, title: "Orders" }} component={MemoizedScreens.Orders} />
       <Stack.Screen name="AddressBook" options={{ headerShown: false, title: "Address Book" }} component={MemoizedScreens.AddressBook} />
       <Stack.Screen name="Prescriptions" options={{ headerShown: false, title: "Prescriptions" }} component={MemoizedScreens.Prescriptions} />
@@ -143,7 +144,7 @@ const MemorizedNavigator = React.memo(({ initialRoute, ...props }) => {
 // Navigation state listener to prevent unnecessary re-renders
 const useNavigationStateListener = (navigationRef) => {
   const routeNameRef = useRef();
-  
+
   return useCallback(() => {
     const previousRouteName = routeNameRef.current;
     const currentRouteName = navigationRef.current?.getCurrentRoute()?.name;
@@ -151,7 +152,7 @@ const useNavigationStateListener = (navigationRef) => {
     if (previousRouteName !== currentRouteName) {
       // Only update when route actually changes
       routeNameRef.current = currentRouteName;
-      
+
       // Analytics tracking can go here
       if (__DEV__) {
         console.log(`Screen changed: ${currentRouteName}`);
@@ -197,7 +198,7 @@ const App = () => {
         if (token) {
           // Dispatch action to fetch user profile if token exists
           store.dispatch(fetchUserProfile());
-          
+
           // Use setTimeout to prevent blocking UI
           setTimeout(() => {
             setInitialRoute("Splash");
@@ -207,7 +208,7 @@ const App = () => {
         } else {
           // Check if onboarding was skipped
           const isSkip = await SecureStore.getItemAsync("isSkip");
-          
+
           setTimeout(() => {
             setInitialRoute(isSkip === "true" ? "Splash" : "Splash");
             setIsLoading(false);
@@ -217,7 +218,7 @@ const App = () => {
       } catch (error) {
         console.error("Error during app preparation:", error);
         Sentry.captureException(error);
-        
+
         // Fallback to default route in case of error
         setInitialRoute("Splash");
         setIsLoading(false);
@@ -257,8 +258,8 @@ const App = () => {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <NavigationContainer 
-        ref={navigationRef} 
+      <NavigationContainer
+        ref={navigationRef}
         onReady={onLayoutRootView}
         onStateChange={onStateChange}
       >
@@ -286,14 +287,15 @@ const styles = StyleSheet.create({
 // Root App component with all providers
 const RootApp = () => (
   <ErrorBoundary>
-    <Provider store={store}>
-      <ToastProvider>
-        <LocationProvider>
-       
-          <App />
-        </LocationProvider>
-      </ToastProvider>
-    </Provider>
+    <CheckAppUpdate>
+      <Provider store={store}>
+        <ToastProvider>
+          <LocationProvider>
+            <App />
+          </LocationProvider>
+        </ToastProvider>
+      </Provider>
+    </CheckAppUpdate>
   </ErrorBoundary>
 );
 

@@ -1,4 +1,4 @@
-import React, { useContext, useEffect, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -28,6 +28,8 @@ const AddressForm = ({ onClose, onSubmit, refresh }) => {
     type: 'home',
   });
 
+  // Add a ref to track if location data has been set
+  const locationDataSet = useRef(false);
 
   const [errors, setErrors] = useState({});
 
@@ -59,19 +61,20 @@ const AddressForm = ({ onClose, onSubmit, refresh }) => {
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
+
+  // Fixed useEffect - only run once when location data is available
   useEffect(() => {
-
-    if (location?.weather) {
-      setFormData({
-        ...formData,
-        city: location?.weather?.district || '',
-        state: location?.weather?.city || '',
-        pincode: location?.weather?.postalCode || '',
-        stree_address: location?.weather?.completeAddress || ''
-      });
+    if (location?.weather && !locationDataSet.current) {
+      setFormData(prevData => ({
+        ...prevData,
+        city: location?.weather?.district || prevData.city,
+        state: location?.weather?.city || prevData.state,
+        pincode: location?.weather?.postalCode || prevData.pincode,
+        stree_address: location?.weather?.completeAddress || prevData.stree_address
+      }));
+      locationDataSet.current = true;
     }
-
-  }, [location?.weather])
+  }, [location?.weather]);
 
   const handleSubmit = async () => {
     if (!validateForm()) return;
@@ -106,7 +109,7 @@ const AddressForm = ({ onClose, onSubmit, refresh }) => {
     }
   };
 
-  const renderInput = (label, field, placeholder, keyboardType = 'default') => (
+  const renderInput = useCallback((label, field, placeholder, keyboardType = 'default',multiline=false) => (
     <View style={styles.inputContainer}>
       <Text style={styles.inputLabel}>
         {label} <Text style={styles.requiredStar}>*</Text>
@@ -114,20 +117,21 @@ const AddressForm = ({ onClose, onSubmit, refresh }) => {
       <TextInput
         style={[styles.input, errors[field] && styles.inputError]}
         value={formData[field]}
+        multiline={multiline}
         onChangeText={(text) => {
-          setFormData(prev => ({ ...prev, [field]: text }));
+          console.log(`Updating ${field} to ${text}`);
+          setFormData((prev) => ({ ...prev, [field]: text }));
           if (errors[field]) {
-            setErrors(prev => ({ ...prev, [field]: '' }));
+            setErrors((prev) => ({ ...prev, [field]: '' }));
           }
         }}
+
         placeholder={placeholder}
         keyboardType={keyboardType}
       />
-      {errors[field] && (
-        <Text style={styles.errorText}>{errors[field]}</Text>
-      )}
+      {errors[field] && <Text style={styles.errorText}>{errors[field]}</Text>}
     </View>
-  );
+  ), [formData, errors]);
 
   return (
     <Modal
@@ -147,7 +151,7 @@ const AddressForm = ({ onClose, onSubmit, refresh }) => {
 
           <ScrollView showsVerticalScrollIndicator={false}>
             {renderInput('House/Flat Number', 'house_no', 'Enter house/flat number')}
-            {renderInput('Street Address', 'stree_address', 'Enter street address')}
+            {renderInput('Street Address', 'stree_address', 'Enter street address','default',true)}
             {renderInput('City', 'city', 'Enter city')}
             {renderInput('State', 'state', 'Enter state')}
             {renderInput('Pincode', 'pincode', 'Enter 6-digit pincode', 'numeric')}

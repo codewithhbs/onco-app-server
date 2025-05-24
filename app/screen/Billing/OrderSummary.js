@@ -37,7 +37,7 @@ const OrderSummary = ({ billingData, cart }) => {
     const handleSelectPaymentOption = (option) => {
         setPaymentOption(option);
     };
-
+console.log("address",address)
     const checkUserToken = async () => {
         try {
             const data = await SecureStore.getItemAsync('token');
