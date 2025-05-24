@@ -1,6 +1,6 @@
 const axios = require("axios");
 
-const sendMessage = async ({ mobile, msg, pdf = "", img1 = "https://i.ibb.co/dsXmff0g/7171668-3544858.jpg", img2 = "", scheduleon = "" }) => {
+const sendMessage = async ({ mobile, msg, pdf = "", img1 = "https://i.ibb.co/xtF1BxwS/onco-msg-head.png", img2 = "", scheduleon = "" }) => {
     try {
         const API_URL = "http://api.wtap.sms4power.com/wapp/api/send/json";
         const API_KEY = "97faabee8618426fa5d23b277dbf58b1";
