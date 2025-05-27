@@ -92,7 +92,7 @@ const AddressSelection = ({ onSelect }) => {
 
   return (
     <View style={styles.sectionContainer}>
-      <Text style={styles.sectionTitle}>Select Delivery Address</Text>
+     <Text style={styles.sectionTitle}>Where should we deliver your order?</Text>
 
       <View style={styles.addressList}>
         {addresses.length === 0 ? (

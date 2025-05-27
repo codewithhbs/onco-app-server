@@ -610,7 +610,7 @@ Thank you for shopping with *Onco Healthmart*! Your order has been successfully 
 ${itemsList}
 
 *Order Summary:*
-Subtotal: ₹${subtotal.toFixed(2)}
+Subtotal: ₹${((subtotal || 0) - (shipping || 0) - (extraCharges || 0)).toFixed(2)}
 Shipping: ₹${shipping.toFixed(2)}
 ${extraCharges > 0 ? `COD Fee: ₹${extraCharges.toFixed(2)}\n` : ""}
 *Total Amount:* ₹${total.toFixed(2)}

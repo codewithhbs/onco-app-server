@@ -24,7 +24,7 @@ export default function Profile() {
         { title: 'About Us', route: 'About', icon: 'information-outline' },
 
         { title: 'Logout', route: 'Logout', icon: 'logout-variant' },
-        { title: 'Delete My Account', route: 'delete', icon: 'close' }
+        // { title: 'Delete My Account', route: 'delete', icon: 'close' }
 
     ];
 

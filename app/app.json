@@ -9,7 +9,7 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.oncohealthmart.app",
+      "bundleIdentifier": "com.happy_coding.app",
       "icon": "./assets/logo/ic_launcher.png",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
@@ -39,7 +39,7 @@
         "backgroundColor": "#65C0E7"
       },
       "icon": "./assets/logo/ic_launcher.png",
-      "package": "com.oncohealthmart.app"
+      "package": "com.happy_coding.app"
     },
     "web": {
       "favicon": "./assets/logo/ic_launcher_round.png"
