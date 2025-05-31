@@ -98,7 +98,7 @@ export default function CheckAppUpdate({ children }) {
                             </View>
                             <View style={styles.featureItem}>
                                 <Text style={styles.featureIcon}>📍</Text>
-                                <Text style={styles.featureText}>Solved issue With Address Pickinhg</Text>
+                                <Text style={styles.featureText}>Location detection improved – address picking now fixed</Text>
                             </View>
                             <View style={styles.featureItem}>
                                 <Text style={styles.featureIcon}>📋</Text>

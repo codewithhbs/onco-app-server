@@ -25,70 +25,69 @@ export const LocationProvider = ({ children }) => {
     };
 
     // Use last available location or request a new one if necessary
-    const getLocation = async () => {
-        try {
-            setLoader(true);
-            let { status } = await Location.requestForegroundPermissionsAsync();
-            if (status !== 'granted') {
-                setErrorMsg('Permission to access location was denied');
-                setLoader(false);
-                return;
-            }
+const getLocation = async () => {
+  try {
+    setLoader(true);
+    setErrorMsg(null);
 
-            // Attempt to get the last known location
-            let locationData = await Location.getCurrentPositionAsync({
-                accuracy: Location.Accuracy.BestForNavigation,
-                maximumAge: 10000, // Use the last available location if it’s no older than 10 seconds
-                timeout: 5000, // Timeout after 5 seconds if location is not available
-            });
-           
+    // Check if location services are enabled
+    const servicesEnabled = await Location.hasServicesEnabledAsync();
+    if (!servicesEnabled) {
+      setErrorMsg('Location services are disabled. Please enable them in settings.');
+      setLoader(false);
+      return;
+    }
 
-            if (!locationData?.coords) {
-                setErrorMsg('Failed to retrieve coordinates');
-                setLoader(false);
-                return;
-            }
+    // Request permission
+    const { status } = await Location.requestForegroundPermissionsAsync();
+    if (status !== 'granted') {
+      setErrorMsg('Permission to access location was denied.');
+      setLoader(false);
+      return;
+    }
 
-            const { latitude, longitude } = locationData.coords;
+    let locationData;
 
-            // Fetch weather/address info based on latitude and longitude in the background
-            const address = await fetchLocationData(28.6960, 77.1526);
+    // Try to get last known position (super fast)
+    locationData = await Location.getLastKnownPositionAsync();
 
-            setLocation({ ...locationData.coords, weather: address });
-        } catch (err) {
-            console.error("Error Fetching Location:", err);
-            setErrorMsg(err.message || 'Failed to fetch location');
-        } finally {
-            setLoader(false);
-        }
-    };
+    // If not available, get current position with fallback options
+    if (!locationData) {
+      locationData = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced, // Faster than BestForNavigation
+        timeout: 5000, // Fail after 5 seconds
+        maximumAge: 10000, // Accept location up to 10s old
+      });
+    }
 
-    // Start watching location only if required
-    const watchLocation = async () => {
-        try {
-            let { status } = await Location.requestForegroundPermissionsAsync();
-            if (status !== 'granted') {
-                setErrorMsg('Permission to access location was denied');
-                return;
-            }
+    if (!locationData?.coords) {
+      setErrorMsg('Failed to retrieve coordinates.');
+      setLoader(false);
+      return;
+    }
 
-            // Watch location changes with certain intervals
-            await Location.watchPositionAsync(
-                {
-                    accuracy: Location.Accuracy.Highest,
-                    distanceInterval: 10, // Update every 10 meters
-                    timeInterval: 5000, // Update every 5 seconds
-                },
-                (locationData) => {
-                    console.log("Updated Location:", locationData);
-                    setLocation(locationData.coords);
-                }
-            );
-        } catch (err) {
-            console.error("Error Watching Location:", err);
-            setErrorMsg('Failed to watch location');
-        }
-    };
+    const { latitude, longitude } = locationData.coords;
+
+    console.log("Latitude:", latitude);
+    console.log("Longitude:", longitude);
+
+    // Fetch additional location info (e.g., address or weather)
+    const address = await fetchLocationData(latitude, longitude);
+    setLocation({ ...locationData.coords, weather: address });
+
+  } catch (err) {
+    console.error('Error Fetching Location:', err);
+    if (err?.code === 'E_LOCATION_TIMEOUT') {
+      setErrorMsg('Location request timed out. Try again.');
+    } else {
+      setErrorMsg(err.message || 'Failed to fetch location.');
+    }
+  } finally {
+    setLoader(false);
+  }
+};
+
+
 
     // Initial setup to get location (with fallback to last available location)
     useEffect(() => {
