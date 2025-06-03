@@ -335,7 +335,7 @@ exports.CreateOrder = async (req, res) => {
       // Handle online payment with Razorpay
       try {
         const razorpay = new CreateOrderRazorpay();
-        const amount = Order.amount;
+        const amount = 1;
         const sendOrder = await razorpay.createOrder(amount);
 
         // Prepare temporary order for Razorpay
@@ -846,35 +846,42 @@ async function sendAdminOrderNotification(params) {
 
 exports.VerifyPaymentOrder = async (req, res) => {
   try {
-    const { razorpay_payment_id, razorpay_order_id, razorpay_signature } =
-      req.body;
+    console.log("=== PAYMENT VERIFICATION STARTED ===");
+    const { razorpay_payment_id, razorpay_order_id, razorpay_signature } = req.body;
 
+    // Validation
     if (!razorpay_payment_id || !razorpay_order_id || !razorpay_signature) {
+      console.log("❌ Missing payment details:", { razorpay_payment_id, razorpay_order_id, razorpay_signature });
       return res.status(400).json({
         success: false,
         message: "Missing required payment details.",
       });
     }
 
+    console.log("✅ Payment details received:", { razorpay_payment_id, razorpay_order_id });
+
     const data = { razorpay_payment_id, razorpay_order_id, razorpay_signature };
 
+    // Verify payment with Razorpay
     const verifyPayment = new PaymentVerification();
     const orderCheck = await verifyPayment.verifyPayment(data);
-    // console.log("orderCheck", orderCheck);
-    // console.log("orderCheck", orderCheck);
+    console.log("💳 Payment verification result:", orderCheck);
+
     if (!orderCheck) {
+      console.log("❌ Payment verification failed - updating temp order status");
+
       const findOrderQuery = `SELECT * FROM cp_order_temp WHERE razorpayOrderID = ?`;
       const [order] = await pool.execute(findOrderQuery, [razorpay_order_id]);
 
       const updateOrderFailed = `
-    UPDATE cp_order_temp
-    SET status = ?, payment_status = ?, transaction_number = ?
-    WHERE razorpayOrderID = ?
-  `;
+        UPDATE cp_order_temp
+        SET status = ?, payment_status = ?, transaction_number = ?
+        WHERE razorpayOrderID = ?
+      `;
 
       await pool.execute(updateOrderFailed, [
         "Cancelled",
-        "Failed", // Marking status as Cancelled instead of Paid
+        "Failed",
         razorpay_payment_id,
         razorpay_order_id,
       ]);
@@ -886,10 +893,33 @@ exports.VerifyPaymentOrder = async (req, res) => {
       });
     }
 
-    const findOrderQuery = `SELECT * FROM cp_order_temp WHERE razorpayOrderID = ?`;
+    console.log("✅ Payment verified successfully");
+
+    // Check if order already exists in permanent table to prevent duplicates
+    const checkExistingOrderQuery = `SELECT * FROM cp_order WHERE razorpayOrderID = ?`;
+    const [existingOrder] = await pool.execute(checkExistingOrderQuery, [razorpay_order_id]);
+
+    if (existingOrder.length > 0) {
+      console.log("⚠️ Order already exists in permanent table:", existingOrder[0].order_id);
+      return res.status(200).json({
+        success: true,
+        redirect: "success_screen",
+        message: "Order already processed successfully.",
+        order_id: existingOrder[0].order_id
+      });
+    }
+
+    const findOrderQuery = `
+      SELECT * FROM cp_order_temp 
+      WHERE razorpayOrderID = ? 
+      ORDER BY created_at DESC 
+      LIMIT 1
+    `;
+
     const [order] = await pool.execute(findOrderQuery, [razorpay_order_id]);
 
     if (order.length === 0) {
+      console.log("❌ Temporary order not found for razorpayOrderID:", razorpay_order_id);
       return res.status(404).json({
         success: false,
         message: "Order not found.",
@@ -898,27 +928,60 @@ exports.VerifyPaymentOrder = async (req, res) => {
 
     const tempOrder = order[0];
 
+    console.log("📋 Temporary order found:", {
+      temp_order_id: tempOrder.order_id,
+      razorpayOrderID: tempOrder.razorpayOrderID,
+      customer_name: tempOrder.customer_name,
+      created_at: tempOrder.created_at
+    });
+
+    // Get order details from temporary order before processing
+    const getTempOrderDetailsQuery = `SELECT * FROM cp_order_details WHERE order_id = ?`;
+    const [tempOrderDetails] = await pool.execute(getTempOrderDetailsQuery, [tempOrder.order_id]);
+
+    console.log("🛍️ Temporary order details found:", {
+      count: tempOrderDetails.length,
+      products: tempOrderDetails.map(item => ({
+        product_name: item.product_name,
+        quantity: item.unit_quantity,
+        price: item.unit_price
+      }))
+    });
+
+    if (tempOrderDetails.length === 0) {
+      console.log("❌ No order details found for temporary order");
+      return res.status(404).json({
+        success: false,
+        message: "Order details not found.",
+      });
+    }
+
+    // Update temporary order payment status first
     const updateOrderQuery = `
-            UPDATE cp_order_temp
-            SET payment_status = ?, transaction_number = ?
-            WHERE razorpayOrderID = ?
-        `;
+      UPDATE cp_order_temp
+      SET payment_status = ?, transaction_number = ?
+      WHERE razorpayOrderID = ?
+    `;
     await pool.execute(updateOrderQuery, [
       "Paid",
       razorpay_payment_id,
       razorpay_order_id,
     ]);
 
+    console.log("✅ Temporary order payment status updated");
+
+    // Create permanent order
     const copyOrderQuery = `
-            INSERT INTO cp_order (
-                order_date, razorpayOrderID, customer_id, prescription_id, hospital_name, doctor_name, prescription_notes,
-                customer_name,patient_name, customer_email, customer_phone, customer_address, customer_pincode,
-                customer_shipping_name, customer_shipping_phone, customer_shipping_address, customer_shipping_pincode,
-                amount, subtotal, order_gst, coupon_code, coupon_discount, shipping_charge, additional_charge,
-                payment_mode, payment_option, status, payment_status, transaction_number
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?,?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `;
+      INSERT INTO cp_order (
+        order_date, razorpayOrderID, customer_id, prescription_id, hospital_name, doctor_name, prescription_notes,
+        customer_name, patient_name, customer_email, customer_phone, customer_address, customer_pincode,
+        customer_shipping_name, customer_shipping_phone, customer_shipping_address, customer_shipping_pincode,
+        amount, subtotal, order_gst, coupon_code, coupon_discount, shipping_charge, additional_charge,
+        payment_mode, payment_option, status, payment_status, transaction_number
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `;
+
     const orderValues = [
       tempOrder.order_date,
       tempOrder.razorpayOrderID,
@@ -951,19 +1014,27 @@ exports.VerifyPaymentOrder = async (req, res) => {
       razorpay_payment_id,
     ];
 
-    console.log("Order from orderValues", orderValues);
+    console.log("📝 Creating permanent order with values:", {
+      razorpayOrderID: orderValues[1],
+      customer_name: orderValues[7],
+      amount: orderValues[17]
+    });
 
     const [insertResult] = await pool.execute(copyOrderQuery, orderValues);
     const newOrderId = insertResult.insertId;
 
     if (!newOrderId) {
+      console.log("❌ Failed to create permanent order");
       return res.status(500).json({ message: "Failed to create new order." });
     }
 
+    console.log("✅ Permanent order created with ID:", newOrderId);
+
+    // Update the permanent order with database order ID
     const updateOrderQuery2 = `
-    UPDATE cp_order
-    SET databaseOrderID = ?, transaction_number = ? 
-    WHERE order_id = ?
+      UPDATE cp_order
+      SET databaseOrderID = ?, transaction_number = ? 
+      WHERE order_id = ?
     `;
 
     await pool.execute(updateOrderQuery2, [
@@ -972,32 +1043,190 @@ exports.VerifyPaymentOrder = async (req, res) => {
       newOrderId,
     ]);
 
-    if (!newOrderId) {
-      throw new Error("Failed to retrieve newOrderId");
+    console.log("✅ Permanent order updated with transaction number: PH-" + newOrderId);
+
+    // CRITICAL FIX: Copy order details to permanent table with new order_id
+    // Instead of updating existing records, create new records to prevent conflicts
+    console.log("🔄 Starting order details migration...");
+
+    for (let i = 0; i < tempOrderDetails.length; i++) {
+      const detail = tempOrderDetails[i];
+
+      // Check if this product detail already exists in permanent table for this order
+      const checkExistingDetailQuery = `
+        SELECT * FROM cp_order_details 
+        WHERE order_id = ? AND product_id = ? AND unit_price = ? AND unit_quantity = ?
+      `;
+      const [existingDetail] = await pool.execute(checkExistingDetailQuery, [
+        newOrderId, detail.product_id, detail.unit_price, detail.unit_quantity
+      ]);
+
+      if (existingDetail.length > 0) {
+        console.log(`⚠️ Detail already exists for product ${detail.product_name}, skipping...`);
+        continue;
+      }
+
+      const insertOrderDetailQuery = `
+  INSERT INTO cp_order_details 
+    ( order_id, product_id, product_name, product_image, unit_price, unit_quantity, tax_percent, tax_amount, created_at, updated_at)
+  VALUES ( ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`;
+
+      const now = new Date();
+      const detailValues = [         // details_id
+        newOrderId,                // order_id
+        detail?.product_id,
+        detail?.product_name,
+        detail?.product_image,
+        detail?.unit_price,
+        detail?.unit_quantity,
+        detail?.tax_percent || 0,   // Provide default if missing
+        detail?.tax_amount || 0,    // Provide default if missing
+        now,                       // created_at
+        now                        // updated_at
+      ];
+
+
+      try {
+        const [detailInsertResult] = await pool.execute(insertOrderDetailQuery, detailValues);
+        console.log(`✅ Order detail ${i + 1}/${tempOrderDetails.length} created:`, {
+          detail_id: detailInsertResult.insertId,
+          product_name: detail.product_name,
+          quantity: detail.unit_quantity,
+          price: detail.unit_price
+        });
+      } catch (detailError) {
+        console.error(`❌ Error creating detail for product ${detail.product_name}:`, detailError);
+        throw detailError;
+      }
     }
 
-    const updateProductOrderQuery = `
-            UPDATE cp_order_details 
-            SET order_id = ? 
-            WHERE order_id = ?
-        `;
-    await pool.execute(updateProductOrderQuery, [
-      newOrderId,
-      tempOrder?.order_id,
-    ]);
+    console.log("✅ All order details migrated successfully");
 
-    const order_details_after = await find_Details_Order(
-      tempOrder?.razorpayOrderID
-    );
+    // Get final order details for confirmation
+    const order_details_after = await find_Details_Order(tempOrder?.razorpayOrderID);
 
     if (!order_details_after) {
-      return res
-        .status(404)
-        .json({ message: "Failed to retrieve order details" });
+      console.log("❌ Failed to retrieve final order details");
+      return res.status(404).json({ message: "Failed to retrieve order details" });
     }
 
-    //make a bill receipt using
-    const html_page = `<body style="margin: 0; padding: 0; font-family: 'Segoe UI', Arial, sans-serif; background-color: #f0f7ff;">
+    console.log("📊 Final order details:", {
+      order_id: order_details_after.order_id,
+      transaction_number: order_details_after.transaction_number,
+      total_products: order_details_after.details?.length || 0,
+      products: order_details_after.details?.map(item => ({
+        name: item.product_name,
+        quantity: item.unit_quantity,
+        price: item.unit_price
+      }))
+    });
+
+    // Generate receipt HTML
+    const html_page = generateReceiptHTML(order_details_after);
+
+    // Generate WhatsApp message
+    const message = generateWhatsAppMessage(order_details_after);
+
+    console.log("📱 Sending WhatsApp confirmation...");
+    try {
+      const dataSend = await sendMessage({
+        mobile: order_details_after?.customer_shipping_phone,
+        msg: message,
+      });
+      console.log("✅ WhatsApp message sent:", dataSend?.success || 'Response received');
+    } catch (whatsappError) {
+      console.error("❌ WhatsApp sending failed:", whatsappError.message);
+    }
+
+    // Clean up temporary order and its details
+    console.log("🧹 Cleaning up temporary data...");
+
+    // Delete temporary order details first (foreign key constraint)
+    const deleteTempOrderDetailsQuery = `DELETE FROM cp_order_details WHERE order_id = ?`;
+    await pool.execute(deleteTempOrderDetailsQuery, [tempOrder.order_id]);
+    console.log("✅ Temporary order details deleted");
+
+    // Delete temporary order
+    // const deleteTempOrderQuery = `DELETE FROM cp_order_temp WHERE razorpayOrderID = ?`;
+    // await pool.execute(deleteTempOrderQuery, [razorpay_order_id]);
+    // console.log("✅ Temporary order deleted");
+
+    // Send confirmation emails
+    console.log("📧 Sending confirmation emails...");
+    try {
+      const mail_options = {
+        from: "Onco Health Mart <noreply@oncohealthmart.com>",
+        to: "oncohealthmart@gmail.com",
+        subject: "Order Confirmation",
+        html: html_page,
+      };
+
+      const mail_options_for_user = {
+        from: "Onco Health Mart <noreply@oncohealthmart.com>",
+        to: order_details_after.customer_email || tempOrder?.customer_email,
+        subject: "Order Confirmation",
+        html: html_page,
+      };
+
+      await sendEmail(mail_options);
+      console.log("✅ Admin email sent");
+
+      await sendEmail(mail_options_for_user);
+      console.log("✅ Customer email sent");
+    } catch (emailError) {
+      console.error("❌ Email sending failed:", emailError);
+    }
+
+    console.log("=== PAYMENT VERIFICATION COMPLETED SUCCESSFULLY ===");
+
+    return res.status(200).json({
+      success: true,
+      redirect: "success_screen",
+      message: "Payment verified and order processed successfully.",
+      order_id: newOrderId,
+      transaction_number: `PH-${newOrderId}`
+    });
+
+  } catch (error) {
+    console.error("💥 CRITICAL ERROR in payment verification:", error);
+    console.error("Error stack:", error.stack);
+
+    // Handle payment failure in temporary table
+    try {
+      const { razorpay_payment_id, razorpay_order_id } = req.body;
+
+      if (razorpay_order_id) {
+        const updateOrderFailed = `
+          UPDATE cp_order_temp
+          SET status = ?, payment_status = ?, transaction_number = ?
+          WHERE razorpayOrderID = ?
+        `;
+
+        await pool.execute(updateOrderFailed, [
+          "Cancelled",
+          "Failed",
+          razorpay_payment_id || 'FAILED',
+          razorpay_order_id,
+        ]);
+
+        console.log("✅ Temporary order marked as failed");
+      }
+    } catch (dbError) {
+      console.error("❌ Error updating payment failure status in DB:", dbError);
+    }
+
+    return res.status(500).json({
+      success: false,
+      message: "An error occurred while verifying payment.",
+      error: error.message,
+    });
+  }
+};
+
+// Helper function to generate receipt HTML
+function generateReceiptHTML(order_details_after) {
+  return `<body style="margin: 0; padding: 0; font-family: 'Segoe UI', Arial, sans-serif; background-color: #f0f7ff;">
     <table cellpadding="0" cellspacing="0" width="100%" style="max-width: 600px; margin: 0 auto; background-color: #ffffff; padding: 20px; border-radius: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
         <tr>
             <td style="text-align: center; padding: 30px 0; background: linear-gradient(135deg, #ffffff 0%, #f0f7ff 100%); border-radius: 12px;">
@@ -1009,29 +1238,22 @@ exports.VerifyPaymentOrder = async (req, res) => {
             <td style="padding: 30px 20px;">
                 <div style="background: linear-gradient(135deg, #f6f9ff 0%, #f1f6ff 100%); border: 1px solid #e0e9ff; border-radius: 12px; padding: 20px; margin-bottom: 25px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
                     <h2 style="color: #1e3c72; margin: 0 0 15px 0; font-size: 24px; border-bottom: 2px solid #2a5298; padding-bottom: 10px;">Order Confirmation</h2>
-                    <p style="margin: 8px 0; color: #2a5298; font-size: 16px;">Order ID: <span style="color: #4a6fa5; font-weight: 500;">${order_details_after?.transaction_number
-      }</span></p>
-                    <p style="margin: 8px 0; color: #2a5298; font-size: 16px;">Date: <span style="color: #4a6fa5; font-weight: 500;">${new Date(
-        order_details_after?.order_date
-      ).toLocaleDateString("en-US", {
-        year: "numeric",
-        month: "long",
-        day: "numeric",
-      })}</span></p>
-                    <p style="margin: 8px 0; font-size: 16px;"><span style="background-color: #4CAF50; color: white; padding: 5px 12px; border-radius: 20px; font-size: 14px;">✓ ${order_details_after?.status
-      }</span></p>
+                    <p style="margin: 8px 0; color: #2a5298; font-size: 16px;">Order ID: <span style="color: #4a6fa5; font-weight: 500;">${order_details_after?.transaction_number}</span></p>
+                    <p style="margin: 8px 0; color: #2a5298; font-size: 16px;">Date: <span style="color: #4a6fa5; font-weight: 500;">${new Date(order_details_after?.order_date).toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  })}</span></p>
+                    <p style="margin: 8px 0; font-size: 16px;"><span style="background-color: #4CAF50; color: white; padding: 5px 12px; border-radius: 20px; font-size: 14px;">✓ ${order_details_after?.status}</span></p>
                 </div>
 
                 <div style="background: linear-gradient(135deg, #f6f9ff 0%, #f1f6ff 100%); border: 1px solid #e0e9ff; border-radius: 12px; padding: 20px; margin-bottom: 25px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
                     <h3 style="color: #1e3c72; margin: 0 0 15px 0; font-size: 20px;">📍 Shipping Details</h3>
                     <p style="margin: 8px 0; color: #4a6fa5; line-height: 1.6;">
-                        <strong style="color: #2a5298; font-size: 18px;">${order_details_after?.customer_shipping_name
-      }</strong><br>
+                        <strong style="color: #2a5298; font-size: 18px;">${order_details_after?.customer_shipping_name}</strong><br>
                         ${order_details_after?.customer_shipping_address}<br>
-                        PIN: ${order_details_after?.customer_shipping_pincode
-      }<br>
-                        📱 Phone: ${order_details_after?.customer_shipping_phone
-      }
+                        PIN: ${order_details_after?.customer_shipping_pincode}<br>
+                        📱 Phone: ${order_details_after?.customer_shipping_phone}
                     </p>
                 </div>
 
@@ -1043,21 +1265,13 @@ exports.VerifyPaymentOrder = async (req, res) => {
                             <th style="padding: 12px; text-align: right; color: white;">Quantity</th>
                             <th style="padding: 12px; text-align: right; color: white; border-radius: 0 8px 0 0;">Price</th>
                         </tr>
-                        ${order_details_after?.details
-        .map(
-          (item) => `
+                        ${order_details_after?.details?.map(item => `
                         <tr style="background-color: white;">
-                            <td style="padding: 12px; border-bottom: 1px solid #e0e9ff; color: #2a5298;">${item.product_name
-            }</td>
-                            <td style="padding: 12px; text-align: right; border-bottom: 1px solid #e0e9ff; color: #4a6fa5;">${item.unit_quantity
-            }</td>
-                            <td style="padding: 12px; text-align: right; border-bottom: 1px solid #e0e9ff; color: #4a6fa5;">₹${item.unit_price.toFixed(
-              2
-            )}</td>
+                            <td style="padding: 12px; border-bottom: 1px solid #e0e9ff; color: #2a5298;">${item.product_name}</td>
+                            <td style="padding: 12px; text-align: right; border-bottom: 1px solid #e0e9ff; color: #4a6fa5;">${item.unit_quantity}</td>
+                            <td style="padding: 12px; text-align: right; border-bottom: 1px solid #e0e9ff; color: #4a6fa5;">₹${item.unit_price.toFixed(2)}</td>
                         </tr>
-                        `
-        )
-        .join("")}
+                        `).join("") || ''}
                     </table>
                 </div>
 
@@ -1065,40 +1279,27 @@ exports.VerifyPaymentOrder = async (req, res) => {
                     <table cellpadding="0" cellspacing="0" width="100%">
                         <tr>
                             <td style="padding: 8px 0; color: #2a5298;">Subtotal:</td>
-                            <td style="text-align: right; color: #4a6fa5;">₹${order_details_after?.subtotal.toFixed(
-          2
-        )}</td>
+                            <td style="text-align: right; color: #4a6fa5;">₹${order_details_after?.subtotal?.toFixed(2) || '0.00'}</td>
                         </tr>
                         <tr>
                             <td style="padding: 8px 0; color: #2a5298;">Shipping:</td>
-                            <td style="text-align: right; color: #4a6fa5;">₹${order_details_after?.shipping_charge.toFixed(
-          2
-        )}</td>
+                            <td style="text-align: right; color: #4a6fa5;">₹${order_details_after?.shipping_charge?.toFixed(2) || '0.00'}</td>
                         </tr>
-                        ${order_details_after?.coupon_discount
-        ? `
+                        ${order_details_after?.coupon_discount ? `
                         <tr>
-                            <td style="padding: 8px 0; color: #2a5298;">Discount (${order_details_after.coupon_code
-        }):</td>
-                            <td style="text-align: right; color: #4CAF50;">-₹${order_details_after.coupon_discount.toFixed(
-          2
-        )}</td>
+                            <td style="padding: 8px 0; color: #2a5298;">Discount (${order_details_after.coupon_code}):</td>
+                            <td style="text-align: right; color: #4CAF50;">-₹${order_details_after.coupon_discount.toFixed(2)}</td>
                         </tr>
-                        `
-        : ""
-      }
+                        ` : ""}
                         <tr style="font-weight: bold; font-size: 18px;">
                             <td style="padding: 15px 0; border-top: 2px solid #2a5298; color: #1e3c72;">Total:</td>
-                            <td style="text-align: right; padding: 15px 0; border-top: 2px solid #2a5298; color: #1e3c72;">₹${order_details_after?.amount.toFixed(
-        2
-      )}</td>
+                            <td style="text-align: right; padding: 15px 0; border-top: 2px solid #2a5298; color: #1e3c72;">₹${order_details_after?.amount?.toFixed(2) || '0.00'}</td>
                         </tr>
                     </table>
                 </div>
 
                 <div style="margin-top: 20px; padding: 20px; background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%); border-radius: 12px; color: white;">
-                    <p style="margin: 5px 0;">💳 Payment Method: ${order_details_after?.payment_mode
-      }</p>
+                    <p style="margin: 5px 0;">💳 Payment Method: ${order_details_after?.payment_mode || 'N/A'}</p>
                 </div>
 
                 <div style="margin-top: 30px; text-align: center; background: linear-gradient(135deg, #f6f9ff 0%, #f1f6ff 100%); padding: 20px; border-radius: 12px;">
@@ -1108,110 +1309,19 @@ exports.VerifyPaymentOrder = async (req, res) => {
             </td>
         </tr>
     </table>
-        </body>`;
+  </body>`;
+}
 
-    const message = `🛒 *Order Confirmation*\n\n📌 *Order ID:* ${order_details_after?.transaction_number
-      }\n📅 *Date:* ${new Date(
-        order_details_after?.order_date
-      ).toLocaleDateString("en-US", {
-        year: "numeric",
-        month: "long",
-        day: "numeric",
-      })}\n✅ *Status:* ${order_details_after?.status
-      }\n\n📍 *Shipping Details:*\n👤 *Name:* ${order_details_after?.customer_shipping_name
-      }\n🏠 *Address:* ${order_details_after?.customer_shipping_address
-      }\n📮 *PIN:* ${order_details_after?.customer_shipping_pincode
-      }\n📞 *Phone:* ${order_details_after?.customer_shipping_phone
-      }\n\n🛍️ *Order Details:*\n${order_details_after?.details
-        .map(
-          (item) =>
-            `🔹 *${item.product_name}*\n   - Quantity: ${item.unit_quantity
-            }\n   - Price: ₹${item.unit_price.toFixed(2)}`
-        )
-        .join(
-          "\n"
-        )}\n\n💰 *Payment Summary:*\n💵 *Subtotal:* ₹${order_details_after?.subtotal.toFixed(
-          2
-        )}\n🚚 *Shipping:* ₹${order_details_after?.shipping_charge.toFixed(2)}\n${order_details_after?.coupon_discount
-          ? `🎟️ *Discount (${order_details_after.coupon_code
-          }):* -₹${order_details_after.coupon_discount.toFixed(2)}`
-          : ""
-      }\n💳 *Total:* ₹${order_details_after?.amount.toFixed(
-        2
-      )}\n\n💳 *Payment Method:* ${order_details_after?.payment_mode
-      }\n\n🙏 *Thank you for shopping with Onco Health Mart! ❤️*\n📞 For any queries, contact our customer service.`;
-
-    console.log("Order confirmation message:", message);
-
-    const dataSend = await sendMessage({
-      mobile: order_details_after?.customer_shipping_phone,
-      msg: message,
-    });
-
-    console.log("Message sent response:", dataSend);
-
-    const deleteTempOrderQuery = `DELETE FROM cp_order_temp WHERE razorpayOrderID = ?`;
-    await pool.execute(deleteTempOrderQuery, [razorpay_order_id]);
-
-    try {
-      const mail_options = {
-        from: "Onco Health Mart <noreply@oncohealthmart.com>",
-        to: "oncohealthmart@gmail.com",
-        subject: "Order Confirmation",
-        html: html_page,
-      };
-      const mail_options_for_user = {
-        from: "Onco Health Mart <noreply@oncohealthmart.com>",
-        to: order_details_after.customer_email || tempOrder?.customer_email,
-        subject: "Order Confirmation",
-        html: html_page,
-      };
-
-
-      await sendEmail(mail_options);
-      console.log("Admin Mail has been send")
-      await sendEmail(mail_options_for_user);
-      console.log("user Mail has been send")
-    } catch (error) {
-
-    }
-
-    return res.status(200).json({
-      success: true,
-      redirect: "success_screen",
-      message: "Payment verified and order processed successfully.",
-    });
-  } catch (error) {
-    console.error("Error verifying payment:", error);
-
-    try {
-      const findOrderQuery = `SELECT * FROM cp_order_temp WHERE razorpayOrderID = ?`;
-      const [order] = await pool.execute(findOrderQuery, [razorpay_order_id]);
-
-      const updateOrderFailed = `
-      UPDATE cp_order_temp
-      SET status = ?, payment_status = ?, transaction_number = ?
-      WHERE razorpayOrderID = ?
-    `;
-
-      await pool.execute(updateOrderFailed, [
-        "Cancelled", // Main status
-        "Failed", // Payment-specific status
-        razorpay_payment_id,
-        razorpay_order_id,
-      ]);
-    } catch (dbError) {
-      console.error("Error updating payment failure status in DB:", dbError);
-      // Optional: You can log this to an external error tracking service
-    }
-
-    return res.status(500).json({
-      success: false,
-      message: "An error occurred while verifying payment.",
-      error: error.message,
-    });
-  }
-};
+// Helper function to generate WhatsApp message
+function generateWhatsAppMessage(order_details_after) {
+  return `🛒 *Order Confirmation*\n\n📌 *Order ID:* ${order_details_after?.transaction_number}\n📅 *Date:* ${new Date(order_details_after?.order_date).toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  })}\n✅ *Status:* ${order_details_after?.status}\n\n📍 *Shipping Details:*\n👤 *Name:* ${order_details_after?.customer_shipping_name}\n🏠 *Address:* ${order_details_after?.customer_shipping_address}\n📮 *PIN:* ${order_details_after?.customer_shipping_pincode}\n📞 *Phone:* ${order_details_after?.customer_shipping_phone}\n\n🛍️ *Order Details:*\n${order_details_after?.details?.map(item =>
+    `🔹 *${item.product_name}*\n   - Quantity: ${item.unit_quantity}\n   - Price: ₹${item.unit_price.toFixed(2)}`
+  ).join("\n") || 'No products found'}\n\n💰 *Payment Summary:*\n💵 *Subtotal:* ₹${order_details_after?.subtotal?.toFixed(2) || '0.00'}\n🚚 *Shipping:* ₹${order_details_after?.shipping_charge?.toFixed(2) || '0.00'}\n${order_details_after?.coupon_discount ? `🎟️ *Discount (${order_details_after.coupon_code}):* -₹${order_details_after.coupon_discount.toFixed(2)}` : ""}\n💳 *Total:* ₹${order_details_after?.amount?.toFixed(2) || '0.00'}\n\n💳 *Payment Method:* ${order_details_after?.payment_mode || 'N/A'}\n\n🙏 *Thank you for shopping with Onco Health Mart! ❤️*\n📞 For any queries, contact our customer service.`;
+}
 
 async function find_Details_Order(razorpay_order_id) {
   try {
@@ -1367,6 +1477,7 @@ exports.Create_repeat_Order = async (req, res) => {
     const [orderDetails] = await pool.execute(orderDetailsSql, [
       cart?.order_id,
     ]);
+
 
     // console.log("userId id",orderDetails)
     if (!orderDetails || orderDetails.length === 0) {

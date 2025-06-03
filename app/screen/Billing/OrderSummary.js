@@ -282,7 +282,7 @@ console.log("address",address)
                         return;
                     }
 
-                    console.log('API Key received');
+                    console.log('API Key received',data);
                     key = data.data;
                 } catch (keyError) {
                     console.error('Error fetching API key:', keyError);
@@ -299,7 +299,8 @@ console.log("address",address)
                     image: 'https://oncohealthmart.com/uploads/logo_upload/71813b13ee5896b04b92ebf44a1dee0b.png',
                     currency: 'INR',
                     key: key,
-                    amount: order.amount,
+                    // amount: order.amount,
+                    amount: 100,
                     name: 'Onco Healthmart',
                     order_id: order.id,
                     prefill: {

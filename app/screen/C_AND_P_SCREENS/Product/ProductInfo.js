@@ -139,7 +139,7 @@ export default function ProductInfo() {
               onDecrease={() => quantity > 1 && setQuantity((q) => q - 1)}
             />
 
-            <Check_Shipping location={location?.weather} shiipingAvailablity={setShippingAvailable} />
+            {/* <Check_Shipping location={location?.weather} shiipingAvailablity={true} /> */}
             <AddToCartButton isDisable={shippingAvailable} onPress={handleAddToCart} />
             {product.presciption_required === "Yes" && <PrescriptionRequired />}
             <ProductDetails

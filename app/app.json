@@ -9,7 +9,7 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.happy_coding.app",
+     "bundleIdentifier": "com.happycoding.app",
       "icon": "./assets/logo/ic_launcher.png",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,

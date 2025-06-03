@@ -31,7 +31,7 @@ export default function CheckShipping({ location, shiipingAvailablity }) {
             setLastCheckedCity(userLocation?.city);
         } catch (error) {
             console.error("I am ", error.response?.data?.message || error.message);
-            shiipingAvailablity(false)
+            shiipingAvailablity(true)
             setError(error.response?.data?.message || "Error occurred while checking location.");
             setMessage("");
         } finally {
