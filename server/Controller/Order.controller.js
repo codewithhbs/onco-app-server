@@ -333,7 +333,7 @@ exports.CreateOrder = async (req, res) => {
       // Handle online payment with Razorpay
       try {
         const razorpay = new CreateOrderRazorpay();
-        const amount = 1;
+        const amount = Order?.amount;
         const sendOrder = await razorpay.createOrder(amount);
 
         // Prepare temporary order for Razorpay
@@ -585,8 +585,7 @@ function generateOrderConfirmationMessage(params) {
   const itemsList = items
     .map(
       (item) =>
-        `• *${item.product_name}*\n  ₹${item.unit_price} × ${
-          item.unit_quantity
+        `• *${item.product_name}*\n  ₹${item.unit_price} × ${item.unit_quantity
         } = ₹${(item.unit_price * item.unit_quantity).toFixed(2)}`
     )
     .join("\n");
@@ -662,17 +661,14 @@ async function sendAdminOrderNotification(params) {
         const totalPrice = product.unit_price * product.unit_quantity;
         return `
         <tr>
-          <td style="padding: 10px; border-bottom: 1px solid #ddd;">${
-            index + 1
+          <td style="padding: 10px; border-bottom: 1px solid #ddd;">${index + 1
           }</td>
-          <td style="padding: 10px; border-bottom: 1px solid #ddd;">${
-            product.product_name
+          <td style="padding: 10px; border-bottom: 1px solid #ddd;">${product.product_name
           }</td>
           <td style="padding: 10px; border-bottom: 1px solid #ddd;">₹${product.unit_price.toFixed(
             2
           )}</td>
-          <td style="padding: 10px; border-bottom: 1px solid #ddd;">${
-            product.unit_quantity
+          <td style="padding: 10px; border-bottom: 1px solid #ddd;">${product.unit_quantity
           }</td>
           <td style="padding: 10px; border-bottom: 1px solid #ddd;">₹${totalPrice.toFixed(
             2
@@ -727,31 +723,27 @@ async function sendAdminOrderNotification(params) {
           <div class="order-info">
             <h2>Order Details</h2>
             <p><strong>Order ID:</strong> ${orderId}</p>
-            ${
-              isTemp
-                ? `<p><strong>Razorpay Order ID:</strong> ${razorpayOrderId}</p>`
-                : `<p><strong>Transaction Number:</strong> ${order.transaction_number}</p>`
-            }
+            ${isTemp
+        ? `<p><strong>Razorpay Order ID:</strong> ${razorpayOrderId}</p>`
+        : `<p><strong>Transaction Number:</strong> ${order.transaction_number}</p>`
+      }
             <p><strong>Order Date:</strong> ${new Date(
-              order.order_date
-            ).toLocaleString("en-IN")}</p>
+        order.order_date
+      ).toLocaleString("en-IN")}</p>
             <p><strong>Payment Method:</strong> ${paymentMethod}</p>
             <p><strong>Status:</strong> <span class="status">${orderStatus}</span></p>
-            ${
-              order.prescription_id
-                ? `<p><strong>Prescription ID:</strong> ${order.prescription_id}</p>`
-                : ""
-            }
-            ${
-              order.hospital_name
-                ? `<p><strong>Hospital:</strong> ${order.hospital_name}</p>`
-                : ""
-            }
-            ${
-              order.doctor_name
-                ? `<p><strong>Doctor:</strong> ${order.doctor_name}</p>`
-                : ""
-            }
+            ${order.prescription_id
+        ? `<p><strong>Prescription ID:</strong> ${order.prescription_id}</p>`
+        : ""
+      }
+            ${order.hospital_name
+        ? `<p><strong>Hospital:</strong> ${order.hospital_name}</p>`
+        : ""
+      }
+            ${order.doctor_name
+        ? `<p><strong>Doctor:</strong> ${order.doctor_name}</p>`
+        : ""
+      }
           </div>
           
           <div class="customer-info">
@@ -792,37 +784,34 @@ async function sendAdminOrderNotification(params) {
             <p><strong>Subtotal:</strong> ₹${subtotal.toFixed(2)}</p>
             <p><strong>Tax:</strong> ₹${taxTotal.toFixed(2)}</p>
             <p><strong>Shipping:</strong> ₹${order.shipping_charge.toFixed(
-              2
-            )}</p>
-            ${
-              order.additional_charge > 0
-                ? `<p><strong>COD Fee:</strong> ₹${order.additional_charge.toFixed(
-                    2
-                  )}</p>`
-                : ""
-            }
-            ${
-              order.coupon_discount > 0
-                ? `<p><strong>Discount:</strong> ₹${order.coupon_discount.toFixed(
-                    2
-                  )}</p>`
-                : ""
-            }
+        2
+      )}</p>
+            ${order.additional_charge > 0
+        ? `<p><strong>COD Fee:</strong> ₹${order.additional_charge.toFixed(
+          2
+        )}</p>`
+        : ""
+      }
+            ${order.coupon_discount > 0
+        ? `<p><strong>Discount:</strong> ₹${order.coupon_discount.toFixed(
+          2
+        )}</p>`
+        : ""
+      }
             <p style="font-size: 18px;"><strong>Total:</strong> ₹${order.amount.toFixed(
-              2
-            )}</p>
+        2
+      )}</p>
           </div>
           
-          ${
-            order.prescription_notes
-              ? `
+          ${order.prescription_notes
+        ? `
           <div class="note">
             <h3>Prescription Notes:</h3>
             <p>${order.prescription_notes}</p>
           </div>
           `
-              : ""
-          }
+        : ""
+      }
           
           <div class="note">
             <p>This is an automated notification. Please take appropriate action on this order.</p>
@@ -1081,7 +1070,7 @@ exports.VerifyPaymentOrder = async (req, res) => {
         SELECT * FROM cp_order_details 
         WHERE order_id = ? AND product_id = ? AND unit_price = ? AND unit_quantity = ?
       `;
-      
+
       const [existingDetail] = await pool.execute(checkExistingDetailQuery, [
         newOrderId,
         sanitizedDetail.product_id,
@@ -1130,7 +1119,7 @@ exports.VerifyPaymentOrder = async (req, res) => {
         SELECT * FROM cp_app_order_details 
         WHERE order_id = ? AND product_id = ? AND unit_price = ? AND unit_quantity = ?
       `;
-      
+
       const [existingAppDetail] = await pool.execute(checkExistingAppDetailQuery, [
         newOrderId,
         sanitizedDetail.product_id,
@@ -1295,34 +1284,29 @@ function generateReceiptHTML(order_details_after) {
             <td style="padding: 30px 20px;">
                 <div style="background: linear-gradient(135deg, #f6f9ff 0%, #f1f6ff 100%); border: 1px solid #e0e9ff; border-radius: 12px; padding: 20px; margin-bottom: 25px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
                     <h2 style="color: #1e3c72; margin: 0 0 15px 0; font-size: 24px; border-bottom: 2px solid #2a5298; padding-bottom: 10px;">Order Confirmation</h2>
-                    <p style="margin: 8px 0; color: #2a5298; font-size: 16px;">Order ID: <span style="color: #4a6fa5; font-weight: 500;">${
-                      order_details_after?.transaction_number
-                    }</span></p>
+                    <p style="margin: 8px 0; color: #2a5298; font-size: 16px;">Order ID: <span style="color: #4a6fa5; font-weight: 500;">${order_details_after?.transaction_number
+    }</span></p>
                     <p style="margin: 8px 0; color: #2a5298; font-size: 16px;">Date: <span style="color: #4a6fa5; font-weight: 500;">${new Date(
-                      order_details_after?.order_date
-                    ).toLocaleDateString("en-US", {
-                      year: "numeric",
-                      month: "long",
-                      day: "numeric",
-                    })}</span></p>
-                    <p style="margin: 8px 0; font-size: 16px;"><span style="background-color: #4CAF50; color: white; padding: 5px 12px; border-radius: 20px; font-size: 14px;">✓ ${
-                      order_details_after?.status
-                    }</span></p>
+      order_details_after?.order_date
+    ).toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    })}</span></p>
+                    <p style="margin: 8px 0; font-size: 16px;"><span style="background-color: #4CAF50; color: white; padding: 5px 12px; border-radius: 20px; font-size: 14px;">✓ ${order_details_after?.status
+    }</span></p>
                 </div>
 
                 <div style="background: linear-gradient(135deg, #f6f9ff 0%, #f1f6ff 100%); border: 1px solid #e0e9ff; border-radius: 12px; padding: 20px; margin-bottom: 25px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
                     <h3 style="color: #1e3c72; margin: 0 0 15px 0; font-size: 20px;">📍 Shipping Details</h3>
                     <p style="margin: 8px 0; color: #4a6fa5; line-height: 1.6;">
-                        <strong style="color: #2a5298; font-size: 18px;">${
-                          order_details_after?.customer_shipping_name
-                        }</strong><br>
+                        <strong style="color: #2a5298; font-size: 18px;">${order_details_after?.customer_shipping_name
+    }</strong><br>
                         ${order_details_after?.customer_shipping_address}<br>
-                        PIN: ${
-                          order_details_after?.customer_shipping_pincode
-                        }<br>
-                        📱 Phone: ${
-                          order_details_after?.customer_shipping_phone
-                        }
+                        PIN: ${order_details_after?.customer_shipping_pincode
+    }<br>
+                        📱 Phone: ${order_details_after?.customer_shipping_phone
+    }
                     </p>
                 </div>
 
@@ -1334,25 +1318,22 @@ function generateReceiptHTML(order_details_after) {
                             <th style="padding: 12px; text-align: right; color: white;">Quantity</th>
                             <th style="padding: 12px; text-align: right; color: white; border-radius: 0 8px 0 0;">Price</th>
                         </tr>
-                        ${
-                          order_details_after?.details
-                            ?.map(
-                              (item) => `
+                        ${order_details_after?.details
+      ?.map(
+        (item) => `
                         <tr style="background-color: white;">
-                            <td style="padding: 12px; border-bottom: 1px solid #e0e9ff; color: #2a5298;">${
-                              item.product_name
-                            }</td>
-                            <td style="padding: 12px; text-align: right; border-bottom: 1px solid #e0e9ff; color: #4a6fa5;">${
-                              item.unit_quantity
-                            }</td>
+                            <td style="padding: 12px; border-bottom: 1px solid #e0e9ff; color: #2a5298;">${item.product_name
+          }</td>
+                            <td style="padding: 12px; text-align: right; border-bottom: 1px solid #e0e9ff; color: #4a6fa5;">${item.unit_quantity
+          }</td>
                             <td style="padding: 12px; text-align: right; border-bottom: 1px solid #e0e9ff; color: #4a6fa5;">₹${item.unit_price.toFixed(
-                              2
-                            )}</td>
+            2
+          )}</td>
                         </tr>
                         `
-                            )
-                            .join("") || ""
-                        }
+      )
+      .join("") || ""
+    }
                     </table>
                 </div>
 
@@ -1360,46 +1341,40 @@ function generateReceiptHTML(order_details_after) {
                     <table cellpadding="0" cellspacing="0" width="100%">
                         <tr>
                             <td style="padding: 8px 0; color: #2a5298;">Subtotal:</td>
-                            <td style="text-align: right; color: #4a6fa5;">₹${
-                              order_details_after?.subtotal?.toFixed(2) ||
-                              "0.00"
-                            }</td>
+                            <td style="text-align: right; color: #4a6fa5;">₹${order_details_after?.subtotal?.toFixed(2) ||
+    "0.00"
+    }</td>
                         </tr>
                         <tr>
                             <td style="padding: 8px 0; color: #2a5298;">Shipping:</td>
-                            <td style="text-align: right; color: #4a6fa5;">₹${
-                              order_details_after?.shipping_charge?.toFixed(
-                                2
-                              ) || "0.00"
-                            }</td>
+                            <td style="text-align: right; color: #4a6fa5;">₹${order_details_after?.shipping_charge?.toFixed(
+      2
+    ) || "0.00"
+    }</td>
                         </tr>
-                        ${
-                          order_details_after?.coupon_discount
-                            ? `
+                        ${order_details_after?.coupon_discount
+      ? `
                         <tr>
-                            <td style="padding: 8px 0; color: #2a5298;">Discount (${
-                              order_details_after.coupon_code
-                            }):</td>
+                            <td style="padding: 8px 0; color: #2a5298;">Discount (${order_details_after.coupon_code
+      }):</td>
                             <td style="text-align: right; color: #4CAF50;">-₹${order_details_after.coupon_discount.toFixed(
-                              2
-                            )}</td>
+        2
+      )}</td>
                         </tr>
                         `
-                            : ""
-                        }
+      : ""
+    }
                         <tr style="font-weight: bold; font-size: 18px;">
                             <td style="padding: 15px 0; border-top: 2px solid #2a5298; color: #1e3c72;">Total:</td>
-                            <td style="text-align: right; padding: 15px 0; border-top: 2px solid #2a5298; color: #1e3c72;">₹${
-                              order_details_after?.amount?.toFixed(2) || "0.00"
-                            }</td>
+                            <td style="text-align: right; padding: 15px 0; border-top: 2px solid #2a5298; color: #1e3c72;">₹${order_details_after?.amount?.toFixed(2) || "0.00"
+    }</td>
                         </tr>
                     </table>
                 </div>
 
                 <div style="margin-top: 20px; padding: 20px; background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%); border-radius: 12px; color: white;">
-                    <p style="margin: 5px 0;">💳 Payment Method: ${
-                      order_details_after?.payment_mode || "N/A"
-                    }</p>
+                    <p style="margin: 5px 0;">💳 Payment Method: ${order_details_after?.payment_mode || "N/A"
+    }</p>
                 </div>
 
                 <div style="margin-top: 30px; text-align: center; background: linear-gradient(135deg, #f6f9ff 0%, #f1f6ff 100%); padding: 20px; border-radius: 12px;">
@@ -1414,47 +1389,34 @@ function generateReceiptHTML(order_details_after) {
 
 // Helper function to generate WhatsApp message
 function generateWhatsAppMessage(order_details_after) {
-  return `🛒 *Order Confirmation*\n\n📌 *Order ID:* ${
-    order_details_after?.transaction_number
-  }\n📅 *Date:* ${new Date(order_details_after?.order_date).toLocaleDateString(
-    "en-US",
-    {
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-    }
-  )}\n✅ *Status:* ${
-    order_details_after?.status
-  }\n\n📍 *Shipping Details:*\n👤 *Name:* ${
-    order_details_after?.customer_shipping_name
-  }\n🏠 *Address:* ${
-    order_details_after?.customer_shipping_address
-  }\n📮 *PIN:* ${order_details_after?.customer_shipping_pincode}\n📞 *Phone:* ${
-    order_details_after?.customer_shipping_phone
-  }\n\n🛍️ *Order Details:*\n${
-    order_details_after?.details
+  return `🛒 *Order Confirmation*\n\n📌 *Order ID:* ${order_details_after?.transaction_number
+    }\n📅 *Date:* ${new Date(order_details_after?.order_date).toLocaleDateString(
+      "en-US",
+      {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      }
+    )}\n✅ *Status:* ${order_details_after?.status
+    }\n\n📍 *Shipping Details:*\n👤 *Name:* ${order_details_after?.customer_shipping_name
+    }\n🏠 *Address:* ${order_details_after?.customer_shipping_address
+    }\n📮 *PIN:* ${order_details_after?.customer_shipping_pincode}\n📞 *Phone:* ${order_details_after?.customer_shipping_phone
+    }\n\n🛍️ *Order Details:*\n${order_details_after?.details
       ?.map(
         (item) =>
-          `🔹 *${item.product_name}*\n   - Quantity: ${
-            item.unit_quantity
+          `🔹 *${item.product_name}*\n   - Quantity: ${item.unit_quantity
           }\n   - Price: ₹${item.unit_price.toFixed(2)}`
       )
       .join("\n") || "No products found"
-  }\n\n💰 *Payment Summary:*\n💵 *Subtotal:* ₹${
-    order_details_after?.subtotal?.toFixed(2) || "0.00"
-  }\n🚚 *Shipping:* ₹${
-    order_details_after?.shipping_charge?.toFixed(2) || "0.00"
-  }\n${
-    order_details_after?.coupon_discount
-      ? `🎟️ *Discount (${
-          order_details_after.coupon_code
-        }):* -₹${order_details_after.coupon_discount.toFixed(2)}`
+    }\n\n💰 *Payment Summary:*\n💵 *Subtotal:* ₹${order_details_after?.subtotal?.toFixed(2) || "0.00"
+    }\n🚚 *Shipping:* ₹${order_details_after?.shipping_charge?.toFixed(2) || "0.00"
+    }\n${order_details_after?.coupon_discount
+      ? `🎟️ *Discount (${order_details_after.coupon_code
+      }):* -₹${order_details_after.coupon_discount.toFixed(2)}`
       : ""
-  }\n💳 *Total:* ₹${
-    order_details_after?.amount?.toFixed(2) || "0.00"
-  }\n\n💳 *Payment Method:* ${
-    order_details_after?.payment_mode || "N/A"
-  }\n\n🙏 *Thank you for shopping with Onco Health Mart! ❤️*\n📞 For any queries, contact our customer service.`;
+    }\n💳 *Total:* ₹${order_details_after?.amount?.toFixed(2) || "0.00"
+    }\n\n💳 *Payment Method:* ${order_details_after?.payment_mode || "N/A"
+    }\n\n🙏 *Thank you for shopping with Onco Health Mart! ❤️*\n📞 For any queries, contact our customer service.`;
 }
 
 async function find_Details_Order(razorpay_order_id) {
