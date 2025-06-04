@@ -306,6 +306,11 @@ exports.CreateOrder = async (req, res) => {
         (order_id, product_id, product_name, product_image, unit_price, unit_quantity, tax_percent, tax_amount) 
         VALUES (?,?,?,?,?,?,?,?)`;
 
+    const insertOrderDetailQuery = `
+        INSERT INTO cp_order_details 
+        (order_id, product_id, product_name, product_image, unit_price, unit_quantity, tax_percent, tax_amount, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`;
+
     const saveOrderSql = `
        INSERT INTO cp_order (
            order_date, orderFrom, customer_id, prescription_id, hospital_name, doctor_name, prescription_notes,
@@ -401,7 +406,7 @@ exports.CreateOrder = async (req, res) => {
               // Continue with other products even if one fails
             });
         }
-        console.log("Order from  COD TempOrder", TempOrder);
+        console.log("Order from  Online TempOrder", TempOrder);
         // Send admin notification for pending online payment
         await sendAdminOrderNotification({
           order: TempOrder,
@@ -426,6 +431,10 @@ exports.CreateOrder = async (req, res) => {
     } else {
       // Handle COD order
       try {
+        console.log("=== COD ORDER PROCESSING STARTED ===");
+        console.log("Order Details:", Order);
+        console.log("Products in Order:", ProductInOrder);
+
         const orderValues = Object.values(Order);
 
         // Save order
@@ -442,6 +451,9 @@ exports.CreateOrder = async (req, res) => {
 
         const newOrderId = orderPlaced.insertId;
         const transactionNumber = `PH-${newOrderId}`;
+
+        console.log(`COD Order created with ID: ${newOrderId}`);
+        console.log(`Transaction Number: ${transactionNumber}`);
 
         // Update order with generated ID and transaction number
         const updateOrderQuery = `
@@ -464,11 +476,17 @@ exports.CreateOrder = async (req, res) => {
             // Continue even if this update fails
           });
 
+        console.log("Order updated with transaction number successfully");
+
         // Process each product in the order
         let items = [];
         let totalAmount = 0;
 
-        for (const item of ProductInOrder) {
+        console.log("=== SAVING PRODUCTS TO BOTH TABLES ===");
+
+        for (const [index, item] of ProductInOrder.entries()) {
+          console.log(`Processing product ${index + 1}:`, item.product_name);
+
           const orderDetailsValues = [
             newOrderId,
             item.product_id,
@@ -481,10 +499,17 @@ exports.CreateOrder = async (req, res) => {
           ];
 
           try {
+            // Insert into cp_app_order_details
             await pool.execute(sqlOrderDetails, orderDetailsValues);
+            console.log(`✓ Product ${item.product_name} saved to cp_app_order_details`);
+
+            // Insert into cp_order_details (ONLY FOR COD)
+            await pool.execute(insertOrderDetailQuery, orderDetailsValues);
+            console.log(`✓ Product ${item.product_name} saved to cp_order_details`);
+
           } catch (productError) {
             console.error(
-              `Error inserting product ${item.product_name}:`,
+              `❌ Error inserting product ${item.product_name}:`,
               productError
             );
             // Continue with other products even if one fails
@@ -502,6 +527,10 @@ exports.CreateOrder = async (req, res) => {
           // Add to total amount
           totalAmount += item.unit_price * item.unit_quantity + item.tax_amount;
         }
+
+        console.log(`=== PRODUCT INSERTION COMPLETED ===`);
+        console.log(`Total products processed: ${ProductInOrder.length}`);
+        console.log(`Total amount calculated: ${totalAmount}`);
 
         // Compose WhatsApp order confirmation message
         const message = generateOrderConfirmationMessage({
@@ -523,6 +552,7 @@ exports.CreateOrder = async (req, res) => {
               mobile: userMobile,
               msg: message,
             });
+            console.log(`WhatsApp message sent to: ${userMobile}`);
           } catch (messageError) {
             console.error(
               "Failed to send WhatsApp notification:",
@@ -532,7 +562,8 @@ exports.CreateOrder = async (req, res) => {
           }
         }
 
-        console.log("Order from  COD order", Order);
+        console.log("Order from COD order", Order);
+        
         // Send email notification to admin
         await sendAdminOrderNotification({
           order: {
@@ -545,6 +576,9 @@ exports.CreateOrder = async (req, res) => {
           isTemp: false,
           orderId: newOrderId,
         });
+
+        console.log("Admin notification sent successfully");
+        console.log("=== COD ORDER PROCESSING COMPLETED ===");
 
         // Respond to client
         return res.status(201).json({
@@ -568,7 +602,6 @@ exports.CreateOrder = async (req, res) => {
     });
   }
 };
-
 function generateOrderConfirmationMessage(params) {
   const {
     orderNumber,
