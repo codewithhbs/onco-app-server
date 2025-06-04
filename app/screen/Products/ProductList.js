@@ -24,7 +24,7 @@ export function ProductList({ whatDisplay = 'deal_of_the_day' }) {
       const response = await axios.get(`${API_V1_URL}/api/v1/get-products?${whatDisplay}=1`);
       setProducts(response.data.data);
     } catch (err) {
-      console.error('Error fetching products:', err);
+      console.error('Error fetching products:', err.response.data.message);
       setError('Error fetching products');
     } finally {
       setLoading(false);
