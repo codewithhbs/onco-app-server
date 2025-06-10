@@ -10,6 +10,7 @@ const hpp = require('hpp');
 const dotenv = require('dotenv');
 const router = require('./routes/routes');
 const axios = require('axios');
+// const kafka = new Kafka
 
 dotenv.config();
 // I am Backed

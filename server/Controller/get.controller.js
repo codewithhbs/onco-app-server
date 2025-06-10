@@ -13,9 +13,13 @@ exports.getAllCategory = async (req, res) => {
         }
 
         // Execute the query, passing categoryId only if it exists
-        const [categories] = categoryId
-            ? await pool.execute(checkCategorySql, [categoryId])
-            : await pool.execute(checkCategorySql);
+        try {
+            const [categories] = categoryId
+                ? await pool.execute(checkCategorySql, [categoryId])
+                : await pool.execute(checkCategorySql);
+        } catch (error) {
+
+        }
 
         // If no categories are found
         if (categories.length === 0) {
@@ -48,7 +52,7 @@ exports.GetAllProduct = async (req, res) => {
         const { deal_of_the_day = '0', top_selling = '0', latest_product = '0', category } = req.query;
 
         // Start building the SQL query
-        let sqlQuery = 'SELECT * FROM cp_product WHERE 1=1'; 
+        let sqlQuery = 'SELECT * FROM cp_product WHERE 1=1';
 
         if (deal_of_the_day === '1') {
             sqlQuery += " AND deal_of_the_day = '1'";
@@ -191,7 +195,7 @@ exports.GetAllActiveBanners = async (req, res) => {
 // Content gets
 exports.GetContentOfPage = async (req, res) => {
     try {
-       
+
         const sqlQuery = `SELECT * FROM cp_content WHERE type = 'Legal'`;
         const [pages] = await pool.execute(sqlQuery);
         if (pages.length === 0) {
