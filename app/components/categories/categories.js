@@ -4,7 +4,7 @@ import React from 'react'
 export default function categories() {
   return (
     <View>
-      <Text>categories</Text>
+      <Text>categories </Text>
     </View>
   )
 }

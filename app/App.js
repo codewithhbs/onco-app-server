@@ -216,7 +216,7 @@ const App = () => {
           }, 2000);
         }
       } catch (error) {
-        console.error("Error during app preparation:", error);
+        // console.error("Error during app preparation:", error);
         Sentry.captureException(error);
 
         // Fallback to default route in case of error

@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from "react"
-import { StyleSheet, Text, TouchableOpacity } from "react-native"
-import Icon from "react-native-vector-icons/MaterialCommunityIcons"
+import React, { useState, useEffect } from "react";
+import { StyleSheet, Text, TouchableOpacity } from "react-native";
+import Icon from "react-native-vector-icons/MaterialCommunityIcons";
 
 const styles = StyleSheet.create({
   addToCartButton: {
@@ -21,46 +21,61 @@ const styles = StyleSheet.create({
     marginLeft: 8,
     minWidth: 120,
   },
-})
+  disabledButton: {
+    backgroundColor: "#ccc",
+  },
+});
 
-export const AddToCartButton = ({ onPress, isDisable }) => {
-  const [isLoading, setIsLoading] = useState(false)
-  const [loadingDots, setLoadingDots] = useState("")
+export const AddToCartButton = ({ onPress, isDisable, stock }) => {
+  const [isLoading, setIsLoading] = useState(false);
+  const [loadingDots, setLoadingDots] = useState("");
 
   useEffect(() => {
-    let interval
+    let interval;
     if (isLoading) {
       interval = setInterval(() => {
-        setLoadingDots((dots) => (dots.length < 3 ? dots + "." : ""))
-      }, 100)
+        setLoadingDots((dots) => (dots.length < 3 ? dots + "." : ""));
+      }, 100);
     }
-    return () => clearInterval(interval)
-  }, [isLoading])
+    return () => clearInterval(interval);
+  }, [isLoading]);
 
   const handlePress = () => {
-    setIsLoading(true)
+    setIsLoading(true);
     setTimeout(() => {
-      setIsLoading(false)
-      onPress()
-    }, 500)
+      setIsLoading(false);
+      onPress();
+    }, 500);
+  };
+
+  let buttonText = "Add to Cart";
+  let iconName = isLoading ? "cart-outline" : "cart-plus";
+  let disabled = isLoading;
+
+  if (!stock) {
+    buttonText = "Out of Stock";
+    iconName = "close-circle-outline";
+    disabled = true;
+  } else if (!isDisable) {
+    buttonText = "Delivery Not Available";
+    iconName = "truck-off";
+    disabled = true;
+  } else if (isLoading) {
+    buttonText = `Adding to Cart${loadingDots}`;
   }
 
   return (
-    <>
-      {isDisable ? (
-       <TouchableOpacity onPress={handlePress} style={styles.addToCartButton} disabled={isLoading}>
-       <Icon name={isLoading ? "cart-outline" : "cart-plus"} size={24} color="white" />
-       <Text style={styles.addToCartText}>{isLoading ? `Adding to Cart${loadingDots}` : "Add to Cart"}</Text>
-     </TouchableOpacity>
-       
-      ) : (
-        <TouchableOpacity activeOpacity={0.8} style={styles.addToCartButton} disabled={isLoading}>
-        <Icon name={isLoading ? "cart-outline" : "cart-plus"} size={24} color="white" />
-        <Text style={styles.addToCartText}>Delivery Not Available</Text>
-      </TouchableOpacity>
-      )}
-
-    </>
-  )
-}
-
+    <TouchableOpacity
+      onPress={handlePress}
+      style={[
+        styles.addToCartButton,
+        (disabled || !stock || !isDisable) && styles.disabledButton,
+      ]}
+      disabled={disabled}
+      activeOpacity={0.8}
+    >
+      <Icon name={iconName} size={24} color="white" />
+      <Text style={styles.addToCartText}>{buttonText}</Text>
+    </TouchableOpacity>
+  );
+};

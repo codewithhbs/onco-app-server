@@ -563,7 +563,7 @@ exports.CreateOrder = async (req, res) => {
         }
 
         console.log("Order from COD order", Order);
-        
+
         // Send email notification to admin
         await sendAdminOrderNotification({
           order: {
@@ -1013,9 +1013,9 @@ exports.VerifyPaymentOrder = async (req, res) => {
         customer_name, patient_name, customer_email, customer_phone, customer_address, customer_pincode,
         customer_shipping_name, customer_shipping_phone, customer_shipping_address, customer_shipping_pincode,
         amount, subtotal, order_gst, coupon_code, coupon_discount, shipping_charge, additional_charge,
-        payment_mode, payment_option, status, payment_status, transaction_number
+        payment_mode, payment_option, status, payment_status, transaction_number, orderFrom
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
 
     const orderValues = [
@@ -1048,6 +1048,7 @@ exports.VerifyPaymentOrder = async (req, res) => {
       "New",
       "Paid",
       razorpay_payment_id,
+      "Application"
     ];
 
     const [insertResult] = await pool.execute(copyOrderQuery, orderValues);
@@ -1063,14 +1064,16 @@ exports.VerifyPaymentOrder = async (req, res) => {
     // Update the permanent order with database order ID
     const updateOrderQuery2 = `
       UPDATE cp_order
-      SET databaseOrderID = ?, transaction_number = ? 
+      SET databaseOrderID = ?, transaction_number = ?  ,orderFrom = ?
       WHERE order_id = ?
     `;
 
     await pool.execute(updateOrderQuery2, [
       newOrderId,
       `PH-${newOrderId}`,
+      "Application",
       newOrderId,
+
     ]);
 
     console.log("✅ Permanent order updated with transaction number: PH-" + newOrderId);

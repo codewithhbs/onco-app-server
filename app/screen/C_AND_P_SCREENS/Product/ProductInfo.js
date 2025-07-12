@@ -61,7 +61,7 @@ export default function ProductInfo() {
       setProduct(data.data)
     } catch (err) {
       setError("Failed to load product details")
-      console.error(err)
+      console.error(err.response.data)
     } finally {
       setLoading(false)
     }
@@ -103,7 +103,7 @@ export default function ProductInfo() {
   if (!product) return <ErrorView message="Product not found" />
 
   const discountPercentage = Math.round(((product.product_mrp - product.product_sp) / product.product_mrp) * 100)
-
+ const isInStock = product.stock === 'In Stock';
   if (!location) {
     getLocation()
     console.log("Fetching location...")
@@ -140,7 +140,7 @@ export default function ProductInfo() {
             />
 
             {/* <Check_Shipping location={location?.weather} shiipingAvailablity={true} /> */}
-            <AddToCartButton isDisable={shippingAvailable} onPress={handleAddToCart} />
+            <AddToCartButton stock={isInStock} isDisable={shippingAvailable} onPress={handleAddToCart} />
             {product.presciption_required === "Yes" && <PrescriptionRequired />}
             <ProductDetails
               description={product.short_description}

@@ -14,6 +14,7 @@ import Top_Selling from '../Products/Top_Selling';
 import Layout from '../../components/Layout/Layout';
 import Loader from '../../components/Loader';
 import { API_V1_URL } from '../../constant/API';
+import AllCategories from '../../components/categories/AllCategories';
 
 export default function Home() {
 
@@ -68,7 +69,7 @@ export default function Home() {
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
           }
         >
-          <Categories />
+          <AllCategories />
           <DynmaicSlider
             navigationShow={true}
             heightPass={200}
