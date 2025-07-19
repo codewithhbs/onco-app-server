@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
     View,
     Text,
@@ -17,6 +17,7 @@ import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import RazorpayCheckout from 'react-native-razorpay';
 import { useNavigation } from '@react-navigation/native';
 import { API_V1_URL } from '../../../constant/API';
+import { scale, verticalScale, moderateScale } from 'react-native-size-matters';
 
 export default function Orders() {
     const [orders, setOrders] = useState([]);
@@ -105,7 +106,7 @@ export default function Orders() {
 
 
             const response = await axios.post(
-             `${API_V1_URL}/api/v1/repeat_order/${item?.order_id}`,
+                `http://192.168.56.1:9500/api/v1/repeat_order/${item?.order_id}`,
                 {},
                 { headers: { Authorization: `Bearer ${token}` } }
             );
@@ -246,7 +247,7 @@ export default function Orders() {
 
     const renderHeader = () => (
         <View style={styles.header}>
-             <TouchableOpacity onPress={()=> navigation.goBack()} style={styles.refreshButton}>
+            <TouchableOpacity onPress={() => navigation.goBack()} style={styles.refreshButton}>
                 <Icon name="arrow-left" size={24} color="#0A95DA" />
             </TouchableOpacity>
             <Text style={styles.headerTitle}>My Orders</Text>

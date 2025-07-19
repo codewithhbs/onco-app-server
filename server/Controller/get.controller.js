@@ -4,36 +4,26 @@ exports.getAllCategory = async (req, res) => {
     try {
         const { categoryId } = req.query;
 
-
         let checkCategorySql = `SELECT * FROM cp_category WHERE status = 'Active'`;
-
+        let categories;
 
         if (categoryId) {
             checkCategorySql += ` AND category_id = ?`;
+            [categories] = await pool.execute(checkCategorySql, [categoryId]);
+        } else {
+            [categories] = await pool.execute(checkCategorySql);
         }
 
-        // Execute the query, passing categoryId only if it exists
-        try {
-            const [categories] = categoryId
-                ? await pool.execute(checkCategorySql, [categoryId])
-                : await pool.execute(checkCategorySql);
-        } catch (error) {
-
-        }
-
-        // If no categories are found
-        if (categories.length === 0) {
+        if (!categories || categories.length === 0) {
             return res.status(404).json({ message: "No categories found." });
         }
 
-        // Update category image paths
         const updatedCategories = categories.map(category => {
             category.category_banner = `https://www.oncohealthmart.com${process.env.DIRECTORY_img_upload}/${category.category_banner}`;
             category.category_image = `https://www.oncohealthmart.com${process.env.DIRECTORY_img_upload}/${category.category_image}`;
             return category;
         });
 
-        // Respond with the filtered or full category list
         res.status(200).json({
             success: true,
             count: updatedCategories.length,
@@ -105,7 +95,7 @@ exports.GetAllProduct = async (req, res) => {
         console.error('Error fetching products:', error.message);
         res.status(500).json({
             success: false,
-            message: 'Internal Server Error',
+            message: error.message,
         });
     }
 };

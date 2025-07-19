@@ -69,7 +69,8 @@ export default function Home() {
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
           }
         >
-          <AllCategories />
+          {/* <AllCategories /> */}
+          <Categories />
           <DynmaicSlider
             navigationShow={true}
             heightPass={200}

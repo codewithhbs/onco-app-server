@@ -706,12 +706,16 @@ async function sendAdminOrderNotification(params) {
           <td style="padding: 10px; border-bottom: 1px solid #ddd;">₹${totalPrice.toFixed(
             2
           )}</td>
-          <td style="padding: 10px; border-bottom: 1px solid #ddd;">₹${product.tax_amount.toFixed(
-            2
-          )}</td>
-          <td style="padding: 10px; border-bottom: 1px solid #ddd;">₹${(
-            totalPrice + product.tax_amount
-          ).toFixed(2)}</td>
+<td style="padding: 10px; border-bottom: 1px solid #ddd;">
+  ₹${typeof product.tax_amount === 'number' ? product.tax_amount : ''}
+</td>
+<td style="padding: 10px; border-bottom: 1px solid #ddd;">
+  ₹${typeof product.tax_amount === 'number' && typeof totalPrice === 'number'
+            ? totalPrice + product.tax_amount
+            : ''
+          }
+</td>
+
         </tr>
       `;
       })
@@ -815,25 +819,25 @@ async function sendAdminOrderNotification(params) {
           <div class="summary">
             <h2>Order Summary</h2>
             <p><strong>Subtotal:</strong> ₹${subtotal.toFixed(2)}</p>
-            <p><strong>Tax:</strong> ₹${taxTotal.toFixed(2)}</p>
+ <p><strong>Tax:</strong> ₹${typeof taxTotal === 'number' ? taxTotal : ''}</p>
+
             <p><strong>Shipping:</strong> ₹${order.shipping_charge.toFixed(
         2
       )}</p>
-            ${order.additional_charge > 0
-        ? `<p><strong>COD Fee:</strong> ₹${order.additional_charge.toFixed(
-          2
-        )}</p>`
+        ${typeof order.additional_charge === 'number' && order.additional_charge > 0
+        ? `<p><strong>COD Fee:</strong> ₹${order.additional_charge}</p>`
         : ""
       }
-            ${order.coupon_discount > 0
-        ? `<p><strong>Discount:</strong> ₹${order.coupon_discount.toFixed(
-          2
-        )}</p>`
+
+${typeof order.coupon_discount === 'number' && order.coupon_discount > 0
+        ? `<p><strong>Discount:</strong> ₹${order.coupon_discount}</p>`
         : ""
       }
-            <p style="font-size: 18px;"><strong>Total:</strong> ₹${order.amount.toFixed(
-        2
-      )}</p>
+
+<p style="font-size: 18px;">
+  <strong>Total:</strong> ₹${typeof order.amount === 'number' ? order.amount : ""}
+</p>
+
           </div>
           
           ${order.prescription_notes
@@ -1580,213 +1584,447 @@ exports.Create_repeat_Order = async (req, res) => {
   try {
     const re_order = req.params.id;
 
+    // Validate user authentication
     const userId = req.user?.id?.customer_id;
-
     if (!userId) {
-      return res
-        .status(400)
-        .json({ message: "Please log in to complete the order." });
+      return res.status(401).json({
+        message: "Authentication required. Please log in to complete the order.",
+      });
     }
 
+    // Check if user exists in the database
     const checkUserSql = `SELECT * FROM cp_customer WHERE customer_id = ?`;
-    const [userExists] = await pool.execute(checkUserSql, [userId]);
-    if (userExists.length === 0) {
+    const [userExists] = await pool.execute(checkUserSql, [userId]).catch((err) => {
+      console.error("Database error when checking user:", err);
+      throw new Error("Failed to verify user information.");
+    });
+
+    if (!userExists || userExists.length === 0) {
       return res.status(404).json({ message: "User not found." });
     }
-    const findPastOrder = `SELECT * FROM cp_order WHERE order_id = ?`;
-    const [order_check] = await pool.execute(findPastOrder, [re_order]);
+
+    // Find the past order
+    const findPastOrder = `SELECT * FROM cp_order WHERE order_id = ? AND customer_id = ?`;
+    const [order_check] = await pool.execute(findPastOrder, [re_order, userId]).catch((err) => {
+      console.error("Database error when checking past order:", err);
+      throw new Error("Failed to retrieve past order information.");
+    });
+
     if (order_check.length === 0) {
-      return res.status(404).json({ message: "User not found." });
+      return res.status(404).json({ message: "Past order not found or doesn't belong to you." });
     }
 
-    const cart = order_check[0] || {};
+    const pastOrder = order_check[0];
 
-    if (!cart?.order_id) {
-      throw new Error("Order ID not found. Please check the cart details.");
+    if (!pastOrder?.order_id) {
+      throw new Error("Order ID not found. Please check the order details.");
     }
 
+    // Get order details from past order
     const orderDetailsSql = `SELECT * FROM cp_app_order_details WHERE order_id = ?`;
-    const [orderDetails] = await pool.execute(orderDetailsSql, [
-      cart?.order_id,
-    ]);
+    const [orderDetails] = await pool.execute(orderDetailsSql, [pastOrder?.order_id]).catch((err) => {
+      console.error("Database error when fetching order details:", err);
+      throw new Error("Failed to retrieve order details.");
+    });
 
-    // console.log("userId id",orderDetails)
     if (!orderDetails || orderDetails.length === 0) {
-      return res.status(400).json({ message: "Product details are required." });
+      return res.status(400).json({ message: "No product details found in the past order." });
     }
 
-    const shippingCharge = cart?.totalPrice > 1500 ? 0 : 200;
+    // Get system settings
+    const settingsQuery = `SELECT * FROM cp_settings`;
+    const [settings] = await pool.execute(settingsQuery).catch((err) => {
+      console.error("Database error when fetching settings:", err);
+      throw new Error("Failed to retrieve system settings.");
+    });
 
+    if (!settings || settings.length === 0) {
+      return res.status(500).json({ message: "System settings not available." });
+    }
+
+    const setting = settings[0];
+
+    // ===== FIXED CALCULATION SECTION =====
+    console.log("=== ORDER CALCULATION DEBUG ===");
+
+    // Calculate subtotal and tax from order items
+    let subtotal = 0;
+    let totalTaxAmount = 0;
+
+    orderDetails.forEach(item => {
+      const itemSubtotal = parseFloat(item.unit_price) * parseInt(item.unit_quantity);
+      const itemTaxAmount = parseFloat(item.tax_amount || 0);
+
+      subtotal += itemSubtotal;
+      totalTaxAmount += itemTaxAmount;
+
+      console.log(`Item: ${item.product_name}`);
+      console.log(`  Price: ₹${item.unit_price} × ${item.unit_quantity} = ₹${itemSubtotal}`);
+      console.log(`  Tax: ₹${itemTaxAmount}`);
+    });
+
+    console.log(`Subtotal: ₹${subtotal}`);
+    console.log(`Total Tax: ₹${totalTaxAmount}`);
+
+    // Calculate additional charges
+    const shippingThreshold = parseFloat(setting?.shipping_threshold || 0);
+    const shippingCharge = subtotal > shippingThreshold ? 0 : parseFloat(setting?.shipping_charge || 0);
+    const extraCharges = pastOrder?.payment_option === "COD" ? parseFloat(setting?.cod_fee || 0) : 0;
+    const couponDiscount = parseFloat(pastOrder?.coupon_discount || 0);
+
+    console.log(`Shipping Threshold: ₹${shippingThreshold}`);
+    console.log(`Shipping Charge: ₹${shippingCharge}`);
+    console.log(`Extra Charges (COD): ₹${extraCharges}`);
+    console.log(`Coupon Discount: ₹${couponDiscount}`);
+
+    // Final amount calculation
+    const finalAmount = subtotal + totalTaxAmount + shippingCharge + extraCharges - couponDiscount;
+
+    console.log(`Final Amount Calculation:`);
+    console.log(`₹${subtotal} + ₹${totalTaxAmount} + ₹${shippingCharge} + ₹${extraCharges} - ₹${couponDiscount} = ₹${finalAmount}`);
+    console.log("=== CALCULATION DEBUG END ===");
+
+    // Create timestamp for order tracking
+    const orderDate = new Date();
+    const formattedDate = orderDate.toISOString().slice(0, 19).replace("T", " ");
+
+    // Verify prescription if exists
+    let newRxId = pastOrder?.prescription_id || null;
+    if (newRxId) {
+      const prescriptionQuery = `SELECT * FROM cp_app_prescription WHERE id = ?`;
+      const [prescription] = await pool.execute(prescriptionQuery, [newRxId]).catch((err) => {
+        console.error("Database error when checking prescription:", err);
+        // Don't throw error, just set to null
+        newRxId = null;
+      });
+
+      if (!prescription || prescription.length === 0) {
+        newRxId = null; // Clear invalid prescription ID
+      }
+    }
+
+    // Create new order object based on past order
     const Order = {
-      order_date: new Date(),
+      order_date: formattedDate,
       orderFrom: "Application",
       customer_id: userExists[0]?.customer_id,
-      prescription_id: cart?.prescription_id || "",
-      hospital_name: cart?.hospital_name || "",
-      doctor_name: cart?.doctor_name || "",
-      prescription_notes: cart?.prescription_notes || "",
-      customer_name: cart?.customer_name,
+      prescription_id: newRxId || "",
+      hospital_name: pastOrder?.hospital_name || "",
+      doctor_name: pastOrder?.doctor_name || "",
+      prescription_notes: pastOrder?.prescription_notes || "",
+      customer_name: pastOrder?.customer_name,
+      patient_name: pastOrder?.patient_name || pastOrder?.customer_name,
       customer_email: userExists[0]?.email_id,
-      customer_phone: cart?.customer_phone,
-      customer_address: cart?.customer_address,
-      customer_pincode: cart?.customer_pincode,
-      customer_shipping_name: cart?.customer_shipping_name,
-      customer_shipping_phone: cart?.customer_shipping_phone,
-      customer_shipping_address: cart?.customer_shipping_address,
-      customer_shipping_pincode: cart?.customer_shipping_pincode,
-      amount: cart?.amount,
-      subtotal: cart?.subtotal,
-      order_gst: "",
-      coupon_code: cart?.coupon_code || "",
-      coupon_discount: cart?.coupon_discount || 0,
-      shipping_charge: cart?.shipping_charge,
-      additional_charge: 0,
-      payment_mode: cart?.payment_mode,
-      payment_option: cart?.payment_option || "Online",
-      status: "Pending",
+      customer_phone: pastOrder?.customer_phone,
+      customer_address: pastOrder?.customer_address,
+      customer_pincode: pastOrder?.customer_pincode,
+      customer_shipping_name: pastOrder?.customer_shipping_name,
+      customer_shipping_phone: pastOrder?.customer_shipping_phone,
+      customer_shipping_address: pastOrder?.customer_shipping_address,
+      customer_shipping_pincode: pastOrder?.customer_shipping_pincode,
+      amount: finalAmount, // ✅ FIXED: Using correct finalAmount
+      subtotal: subtotal,
+      order_gst: totalTaxAmount.toFixed(2), // ✅ FIXED: Format tax properly
+      coupon_code: pastOrder?.coupon_code || "",
+      coupon_discount: couponDiscount,
+      shipping_charge: shippingCharge,
+      additional_charge: extraCharges,
+      payment_mode: pastOrder?.payment_mode || "Razorpay",
+      payment_option: pastOrder?.payment_option || "Online",
+      status: newRxId && pastOrder?.payment_option
+        ? pastOrder?.payment_option === "Online"
+          ? "Pending"
+          : "New"
+        : "Prescription Pending",
     };
-    console.log("Order from cart", cart);
 
+    console.log("New Order from past order:", Order);
+
+    // Prepare product details from past order
     const ProductInOrder = orderDetails.map((item) => ({
       product_id: item?.product_id,
       product_name: item?.product_name,
       product_image: item?.product_image,
-      unit_price: item?.unit_price,
-      unit_quantity: item?.unit_quantity,
-      tax_percent: item?.tax_percent || 0,
-      tax_amount: item?.tax_amount || 0,
+      unit_price: parseFloat(item?.unit_price),
+      unit_quantity: parseInt(item?.unit_quantity),
+      tax_percent: parseFloat(item?.tax_percent || 0).toFixed(2),
+      tax_amount: parseFloat(item?.tax_amount || 0).toFixed(2),
     }));
 
     console.log("ProductInOrder:", ProductInOrder);
 
+    // SQL queries
     const sqlOrderDetails = `
         INSERT INTO cp_app_order_details 
         (order_id, product_id, product_name, product_image, unit_price, unit_quantity, tax_percent, tax_amount) 
         VALUES (?,?,?,?,?,?,?,?)`;
 
+    const insertOrderDetailQuery = `
+        INSERT INTO cp_order_details 
+        (order_id, product_id, product_name, product_image, unit_price, unit_quantity, tax_percent, tax_amount, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`;
+
     const saveOrderSql = `
        INSERT INTO cp_order (
-           order_date,orderFrom, customer_id, prescription_id, hospital_name, doctor_name, prescription_notes,
-           customer_name, customer_email, customer_phone, customer_address, customer_pincode,
+           order_date, orderFrom, customer_id, prescription_id, hospital_name, doctor_name, prescription_notes,
+           customer_name, patient_name, customer_email, customer_phone, customer_address, customer_pincode,
            customer_shipping_name, customer_shipping_phone, customer_shipping_address, customer_shipping_pincode,
            amount, subtotal, order_gst, coupon_code, coupon_discount, shipping_charge, additional_charge,
            payment_mode, payment_option, status
        ) VALUES (
-           ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,?
+           ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
        )`;
 
     const saveOrderInTemp = `
        INSERT INTO cp_order_temp (
-           order_date,razorpayOrderID,orderFrom, customer_id, prescription_id, hospital_name, doctor_name, prescription_notes,
-           customer_name, customer_email, customer_phone, customer_address, customer_pincode,
+           order_date, razorpayOrderID, orderFrom, customer_id, prescription_id, hospital_name, doctor_name, prescription_notes,
+           customer_name, patient_name, customer_email, customer_phone, customer_address, customer_pincode,
            customer_shipping_name, customer_shipping_phone, customer_shipping_address, customer_shipping_pincode,
            amount, subtotal, order_gst, coupon_code, coupon_discount, shipping_charge, additional_charge,
            payment_mode, payment_option, status
        ) VALUES (
-           ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,?,?
+           ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
        )`;
 
-    const orderValues = Object.values(Order);
-    const razarpay = new CreateOrderRazorpay();
-    if (cart?.payment_option === "Online") {
-      const amount = cart?.amount;
-      const sendOrder = await razarpay.createOrder(amount);
-      const TemOrder = {
-        order_date: new Date(),
-        razorpayOrderID: sendOrder.id,
-        orderFrom: "Application",
-        customer_id: userExists[0]?.customer_id,
-        prescription_id: cart?.prescription_id || "",
-        hospital_name: cart?.hospital_name || "",
-        doctor_name: cart?.doctor_name || "",
-        prescription_notes: cart?.prescription_notes || "",
-        customer_name: cart?.customer_name,
-        customer_email: userExists[0]?.email_id,
-        customer_phone: cart?.customer_phone,
-        customer_address: cart?.customer_address,
-        customer_pincode: cart?.customer_pincode,
-        customer_shipping_name: cart?.customer_shipping_name,
-        customer_shipping_phone: cart?.customer_shipping_phone,
-        customer_shipping_address: cart?.customer_shipping_address,
-        customer_shipping_pincode: cart?.customer_shipping_pincode,
-        amount: cart?.amount,
-        subtotal: cart?.subtotal,
-        order_gst: "",
-        coupon_code: cart?.coupon_code || "",
-        coupon_discount: cart?.coupon_discount || 0,
-        shipping_charge: cart?.shipping_charge,
-        additional_charge: 0,
-        payment_mode: cart?.payment_mode,
-        payment_option: cart?.payment_option || "Online",
-        status: "Pending",
-      };
+    // Process order based on payment option
+    if (pastOrder?.payment_option === "Online") {
+      // Handle online payment with Razorpay
+      try {
+        const razorpay = new CreateOrderRazorpay();
+        const amount = finalAmount; // ✅ FIXED: Use finalAmount consistently
+        const sendOrder = await razorpay.createOrder(amount);
 
-      const orderValuesTemp = Object.values(TemOrder);
+        // Prepare temporary order for Razorpay
+        const TempOrder = {
+          order_date: formattedDate,
+          razorpayOrderID: sendOrder.id,
+          orderFrom: "Application",
+          customer_id: userExists[0]?.customer_id,
+          prescription_id: newRxId || "",
+          hospital_name: pastOrder?.hospital_name || "",
+          doctor_name: pastOrder?.doctor_name || "",
+          prescription_notes: pastOrder?.prescription_notes || "",
+          customer_name: pastOrder?.customer_name,
+          patient_name: pastOrder?.patient_name || pastOrder?.customer_name,
+          customer_email: userExists[0]?.email_id,
+          customer_phone: pastOrder?.customer_phone,
+          customer_address: pastOrder?.customer_address,
+          customer_pincode: pastOrder?.customer_pincode,
+          customer_shipping_name: pastOrder?.customer_shipping_name,
+          customer_shipping_phone: pastOrder?.customer_shipping_phone,
+          customer_shipping_address: pastOrder?.customer_shipping_address,
+          customer_shipping_pincode: pastOrder?.customer_shipping_pincode,
+          amount: finalAmount, // ✅ FIXED: Use finalAmount
+          subtotal: subtotal,
+          order_gst: totalTaxAmount.toFixed(2),
+          coupon_code: pastOrder?.coupon_code || "",
+          coupon_discount: couponDiscount,
+          shipping_charge: shippingCharge,
+          additional_charge: extraCharges,
+          payment_mode: pastOrder?.payment_mode || "Razorpay",
+          payment_option: "Online",
+          status: "Pending",
+        };
 
-      const saveOrder = await pool.execute(saveOrderInTemp, orderValuesTemp);
+        const orderValuesTemp = Object.values(TempOrder);
 
-      for (const item of ProductInOrder) {
-        const orderDetailsValues = [
-          saveOrder[0].insertId,
-          item.product_id,
-          item.product_name,
-          item.product_image,
-          item.unit_price,
-          item.unit_quantity,
-          item.tax_percent,
-          item.tax_amount,
-        ];
-        try {
-          const deatils = await pool.execute(
-            sqlOrderDetails,
-            orderDetailsValues
-          );
-          console.log("deatils", deatils);
-        } catch (error) {
-          console.error("Error inserting product:", error);
+        // Save temporary order
+        const [saveOrder] = await pool.execute(saveOrderInTemp, orderValuesTemp).catch((err) => {
+          console.error("Database error when saving temporary order:", err);
+          throw new Error("Failed to create temporary order.");
+        });
+
+        // Save order details
+        for (const item of ProductInOrder) {
+          const orderDetailsValues = [
+            saveOrder.insertId,
+            item.product_id,
+            item.product_name,
+            item.product_image,
+            item.unit_price,
+            item.unit_quantity,
+            item.tax_percent,
+            item.tax_amount,
+          ];
+
+          await pool.execute(sqlOrderDetails, orderDetailsValues).catch((err) => {
+            console.error(`Database error when saving product ${item.product_name}:`, err);
+            // Continue with other products even if one fails
+          });
         }
-      }
 
-      return res.status(201).json({
-        message: "Order created successfully.Please Pay !!!",
-        sendOrder,
-      });
+        console.log("Repeat Order (Online) - TempOrder:", TempOrder);
+
+        // Send admin notification for pending online payment
+        await sendAdminOrderNotification({
+          order: TempOrder,
+          products: ProductInOrder,
+          customer: userExists[0],
+          isTemp: true,
+          orderId: saveOrder.insertId,
+          razorpayOrderId: sendOrder.id,
+        });
+
+        return res.status(201).json({
+          message: "Repeat order created successfully. Please complete payment.",
+          sendOrder,
+        });
+      } catch (error) {
+        console.error("Error processing online payment for repeat order:", error);
+        return res.status(500).json({
+          message: "Failed to process payment request for repeat order.",
+          error: error.message,
+        });
+      }
     } else {
-      const orderPlaced = await pool.execute(saveOrderSql, orderValues);
-      for (const item of ProductInOrder) {
-        const orderDetailsValues = [
-          orderPlaced[0].insertId,
-          item.product_id,
-          item.product_name,
-          item.product_image,
-          item.unit_price,
-          item.unit_quantity,
-          item.tax_percent,
-          item.tax_amount,
-        ];
-        console.log("orderDetailsValues:", orderDetailsValues);
-        try {
-          const deatils = await pool.execute(
-            sqlOrderDetails,
-            orderDetailsValues
-          );
-        } catch (error) {
-          console.error("Error inserting product:", error);
+      // Handle COD repeat order
+      try {
+        console.log("=== COD REPEAT ORDER PROCESSING STARTED ===");
+        console.log("Repeat Order Details:", Order);
+        console.log("Products in Repeat Order:", ProductInOrder);
+
+        const orderValues = Object.values(Order);
+
+        // Save order
+        const [orderPlaced] = await pool.execute(saveOrderSql, orderValues).catch((err) => {
+          console.error("Database error when saving repeat order:", err);
+          throw new Error("Failed to create repeat order.");
+        });
+
+        if (!orderPlaced?.insertId) {
+          throw new Error("Failed to retrieve order ID after saving repeat order.");
         }
+
+        const newOrderId = orderPlaced.insertId;
+        const transactionNumber = `PH-${newOrderId}`;
+
+        console.log(`COD Repeat Order created with ID: ${newOrderId}`);
+        console.log(`Transaction Number: ${transactionNumber}`);
+
+        // Update order with generated ID and transaction number
+        const updateOrderQuery = `
+          UPDATE cp_order
+          SET databaseOrderID = ?, transaction_number = ?
+          WHERE order_id = ?
+        `;
+
+        await pool.execute(updateOrderQuery, [newOrderId, transactionNumber, newOrderId]).catch((err) => {
+          console.error("Database error when updating repeat order with transaction number:", err);
+          // Continue even if this update fails
+        });
+
+        console.log("Repeat Order updated with transaction number successfully");
+
+        // Process each product in the repeat order
+        console.log("=== SAVING REPEAT ORDER PRODUCTS TO BOTH TABLES ===");
+
+        for (const [index, item] of ProductInOrder.entries()) {
+          console.log(`Processing repeat order product ${index + 1}:`, item.product_name);
+
+          const orderDetailsValues = [
+            newOrderId,
+            item.product_id,
+            item.product_name,
+            item.product_image,
+            item.unit_price,
+            item.unit_quantity,
+            item.tax_percent,
+            item.tax_amount,
+          ];
+
+          try {
+            // Insert into cp_app_order_details
+            await pool.execute(sqlOrderDetails, orderDetailsValues);
+            console.log(`✓ Product ${item.product_name} saved to cp_app_order_details`);
+
+            // Insert into cp_order_details (ONLY FOR COD)
+            await pool.execute(insertOrderDetailQuery, orderDetailsValues);
+            console.log(`✓ Product ${item.product_name} saved to cp_order_details`);
+
+          } catch (productError) {
+            console.error(`❌ Error inserting repeat order product ${item.product_name}:`, productError);
+            // Continue with other products even if one fails
+          }
+        }
+
+        console.log(`=== REPEAT ORDER PRODUCT INSERTION COMPLETED ===`);
+        console.log(`Total products processed: ${ProductInOrder.length}`);
+
+        // ✅ FIXED: Compose WhatsApp order confirmation message with correct total
+        const message = generateOrderConfirmationMessage({
+          orderNumber: transactionNumber,
+          customerName: pastOrder?.customer_name,
+          items: ProductInOrder,
+          subtotal: subtotal,
+          shipping: shippingCharge,
+          extraCharges,
+          total: finalAmount, // ✅ FIXED: Use finalAmount instead of Order.subtotal
+          paymentMethod: "Cash on Delivery",
+        });
+
+        // Send WhatsApp message to customer
+        const userMobile = userExists[0]?.mobile || pastOrder?.customer_phone;
+        if (userMobile) {
+          try {
+            await sendMessage({
+              mobile: userMobile,
+              msg: message,
+            });
+            console.log(`WhatsApp message sent for repeat order to: ${userMobile}`);
+          } catch (messageError) {
+            console.error("Failed to send WhatsApp notification for repeat order:", messageError);
+            // Continue even if message fails
+          }
+        }
+
+        console.log("Repeat Order (COD) Details:", Order);
+
+        // Send email notification to admin
+        await sendAdminOrderNotification({
+          order: {
+            ...Order,
+            order_id: newOrderId,
+            transaction_number: transactionNumber,
+          },
+          products: ProductInOrder,
+          customer: userExists[0],
+          isTemp: false,
+          orderId: newOrderId,
+        });
+
+        console.log("Admin notification sent successfully for repeat order");
+        console.log("=== COD REPEAT ORDER PROCESSING COMPLETED ===");
+
+        // Respond to client
+        return res.status(201).json({
+          message: "Repeat order created successfully.",
+          orderId: newOrderId,
+          transactionNumber,
+          orderDetails: {
+            subtotal: subtotal,
+            tax: totalTaxAmount,
+            shipping: shippingCharge,
+            extraCharges: extraCharges,
+            discount: couponDiscount,
+            finalAmount: finalAmount
+          }
+        });
+      } catch (error) {
+        console.error("Error creating COD repeat order:", error);
+        return res.status(500).json({
+          message: "An error occurred while creating the repeat order.",
+          error: error.message,
+        });
       }
-      return res
-        .status(201)
-        .json({ message: "Order created successfully.", orderPlaced });
     }
   } catch (error) {
-    console.error("Error creating order:", error);
-    res.status(500).json({
-      message: "An error occurred while creating the order.",
+    console.error("Error in Create_repeat_Order:", error);
+    return res.status(500).json({
+      message: "An unexpected error occurred while creating repeat order. Please try again later.",
       error: error.message,
     });
   }
 };
-
 //admin
 exports.get_all_order = async (req, res) => {
   try {

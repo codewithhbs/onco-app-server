@@ -11,6 +11,9 @@ export default function AllCategories() {
     const dispatch = useDispatch();
     const { categories, loading, error } = useSelector((state) => state.categorey);
 
+
+
+
     useEffect(() => {
         dispatch(fetchCategories());
     }, [dispatch]);
@@ -19,13 +22,13 @@ export default function AllCategories() {
         return <CategoriesSkeleton />;
     }
 
-    if (error) {
-        return (
-            <View style={styles.errorContainer}>
-                <Text style={styles.errorText}>Error: {error}</Text>
-            </View>
-        );
-    }
+    // if (error) {
+    //     return (
+    //         <View style={styles.errorContainer}>
+    //             <Text style={styles.errorText}>Error: {error?.message}</Text>
+    //         </View>
+    //     );
+    // }
 
     // No categories available
     if (!categories || categories.length === 0) {

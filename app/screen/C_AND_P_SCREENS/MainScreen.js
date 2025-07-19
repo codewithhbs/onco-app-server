@@ -1,11 +1,9 @@
 import { View, Text, StyleSheet } from 'react-native';
 import { useSelector, useDispatch } from 'react-redux';
-import BreadCrumbs from './BreadCrumbs';
+
 import BannerImage from './BannerImage';
 import ProductsList from './Products.list';
 import { useRoute } from '@react-navigation/native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import Header from '../../components/Header/Header';
 import { fetchCategoriesById } from '../../store/slice/Categorey/categorey.slice';
 import { useCallback, useEffect, useState } from 'react';
 import axios from 'axios';
@@ -16,6 +14,7 @@ import { API_V1_URL } from '../../constant/API';
 export default function MainScreen() {
     const dispatch = useDispatch();
     const { categoriesById } = useSelector((state) => state.categorey);
+  
     const [error, setError] = useState('');
     const route = useRoute();
     const { id, title } = route.params || {};
@@ -27,7 +26,7 @@ export default function MainScreen() {
             setLoading(true);
             const { data } = await axios.get(`${API_V1_URL}/api/v1/get-products?category=${id}`);
             setCproduct(data.data);
-            //   console.log(data.data.length)
+          
             setLoading(false);
         } catch (error) {
             setError(error.message);
