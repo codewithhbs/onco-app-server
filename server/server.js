@@ -131,6 +131,14 @@ app.post('/Fetch-Current-Location', async (req, res) => {
 app.use('/api/v1', router);
 app.get('/api/v1/get/api/key', async (req, res) => {
     try {
+        console.log('Fetching API Key',process.env.RAZARPAY_KEY_ID);
+        if (!process.env.RAZARPAY_KEY_ID) {
+            console.error('API Key not found');
+            return res.status(403).json({
+                success: false,
+                message: "API Key is not found"
+            });
+        }
         return res.status(200).json({
             success: true,
             data: process.env.RAZARPAY_KEY_ID,

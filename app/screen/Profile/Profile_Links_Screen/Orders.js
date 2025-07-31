@@ -52,7 +52,7 @@ export default function Orders() {
             setError('No user token found. Please log in again.');
             return;
         }
-        
+
         setRefreshing(true);
         try {
             await fetchOrders(token);
@@ -65,6 +65,7 @@ export default function Orders() {
     }, [fetchOrders, token]);
 
     useEffect(() => {
+
         const checkUserToken = async () => {
             try {
                 const data = await SecureStore.getItemAsync('token');
@@ -103,7 +104,7 @@ export default function Orders() {
             return;
         }
 
-        if (item.status.toLowerCase() !== 'completed') {
+        if (item.status.toLowerCase() !== 'completed' || item.status.toLowerCase() !== 'shipped') {
             Alert.alert('Cannot Reorder', 'You can only reorder completed orders.');
             return;
         }
@@ -119,7 +120,7 @@ export default function Orders() {
 
             if (item?.payment_option === 'Online') {
                 const order = response.data?.sendOrder;
-                
+
                 if (!order?.amount || !order?.id) {
                     Alert.alert('Error', 'Invalid payment details. Please try again.');
                     return;
@@ -128,7 +129,7 @@ export default function Orders() {
                 let key;
                 try {
                     const { data } = await axios.get(`${API_V1_URL}/api/v1/get/api/key`);
-                    
+
                     if (!data?.data) {
                         Alert.alert('Error', 'Failed to fetch API key. Please try again.');
                         return;
@@ -233,7 +234,7 @@ export default function Orders() {
                         <Text style={styles.productPrice}>₹{item.unit_price}</Text>
                     </View>
                 )) || <Text style={styles.noDetailsText}>No product details available</Text>}
-                
+
                 <View style={styles.divider} />
                 <View style={styles.summaryContainer}>
                     <View style={styles.summaryRow}>
@@ -259,8 +260,8 @@ export default function Orders() {
                 <Icon name="arrow-left" size={24} color="#0A95DA" />
             </TouchableOpacity>
             <Text style={styles.headerTitle}>My Orders</Text>
-            <TouchableOpacity 
-                onPress={onRefresh} 
+            <TouchableOpacity
+                onPress={onRefresh}
                 style={[styles.headerButton, refreshing && styles.disabledButton]}
                 disabled={refreshing}
             >
@@ -297,7 +298,7 @@ export default function Orders() {
     );
 
     const isOrderCompleted = (status) => {
-        return status.toLowerCase() === 'completed';
+        return status.toLowerCase() === 'completed' || status.toLowerCase() === 'shipped';
     };
 
     if (loading) {
@@ -320,9 +321,9 @@ export default function Orders() {
                     <ScrollView
                         showsVerticalScrollIndicator={false}
                         refreshControl={
-                            <RefreshControl 
-                                refreshing={refreshing} 
-                                onRefresh={onRefresh} 
+                            <RefreshControl
+                                refreshing={refreshing}
+                                onRefresh={onRefresh}
                                 colors={["#0A95DA"]}
                                 tintColor="#0A95DA"
                             />
@@ -350,7 +351,7 @@ export default function Orders() {
                                             </View>
                                             <View
                                                 style={[
-                                                    styles.statusBadge, 
+                                                    styles.statusBadge,
                                                     { backgroundColor: getStatusColor(order.status) + "20" }
                                                 ]}
                                             >
@@ -397,7 +398,7 @@ export default function Orders() {
                                             <TouchableOpacity
                                                 onPress={() => handleRepeatOrder(order)}
                                                 style={[
-                                                    styles.actionButton, 
+                                                    styles.actionButton,
                                                     styles.repeatButton,
                                                     !isOrderCompleted(order.status) && styles.disabledRepeatButton
                                                 ]}
@@ -406,15 +407,15 @@ export default function Orders() {
                                                 {reorderingOrderId === order.order_id ? (
                                                     <ActivityIndicator size="small" color="#FFFFFF" />
                                                 ) : (
-                                                    <Icon 
-                                                        name="repeat" 
-                                                        size={16} 
-                                                        color={isOrderCompleted(order.status) ? "#FFFFFF" : "#9CA3AF"} 
+                                                    <Icon
+                                                        name="repeat"
+                                                        size={16}
+                                                        color={isOrderCompleted(order.status) ? "#FFFFFF" : "#9CA3AF"}
                                                     />
                                                 )}
-                                                <Text 
+                                                <Text
                                                     style={[
-                                                        styles.actionButtonText, 
+                                                        styles.actionButtonText,
                                                         styles.repeatButtonText,
                                                         !isOrderCompleted(order.status) && styles.disabledButtonText
                                                     ]}

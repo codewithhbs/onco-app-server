@@ -33,7 +33,7 @@ export default function SimilarProducts({ id, salt }) {
     };
 
     const handleRediect = (id, name) => {
-       
+
         navigation.navigate('Product_info', {
             id: id,
             title: name

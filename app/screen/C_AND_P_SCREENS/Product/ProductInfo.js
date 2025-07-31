@@ -103,7 +103,7 @@ export default function ProductInfo() {
   if (!product) return <ErrorView message="Product not found" />
 
   const discountPercentage = Math.round(((product.product_mrp - product.product_sp) / product.product_mrp) * 100)
- const isInStock = product.stock === 'In Stock';
+  const isInStock = product.stock === 'In Stock';
   if (!location) {
     getLocation()
     console.log("Fetching location...")

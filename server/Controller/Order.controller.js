@@ -882,6 +882,11 @@ ${typeof order.coupon_discount === 'number' && order.coupon_discount > 0
 }
 
 exports.VerifyPaymentOrder = async (req, res) => {
+  let tempOrder = null;
+  let tempOrderDetails = [];
+  let newOrderId = null;
+  let errorContext = "";
+
   try {
     console.log("=== PAYMENT VERIFICATION STARTED ===");
     const { razorpay_payment_id, razorpay_order_id, razorpay_signature } = req.body;
@@ -895,7 +900,7 @@ exports.VerifyPaymentOrder = async (req, res) => {
       });
       return res.status(400).json({
         success: false,
-        message: "Missing required payment details.",
+        message: "Missing required payment details. Please try again or contact support.",
       });
     }
 
@@ -904,55 +909,9 @@ exports.VerifyPaymentOrder = async (req, res) => {
       razorpay_order_id,
     });
 
-    const data = { razorpay_payment_id, razorpay_order_id, razorpay_signature };
+    errorContext = "Fetching temporary order";
 
-    // Verify payment with Razorpay
-    const verifyPayment = new PaymentVerification();
-    const orderCheck = await verifyPayment.verifyPayment(data);
-    console.log("💳 Payment verification result:", orderCheck);
-
-    if (!orderCheck) {
-      console.log("❌ Payment verification failed - updating temp order status");
-
-      const findOrderQuery = `SELECT * FROM cp_order_temp WHERE razorpayOrderID = ?`;
-      const [order] = await pool.execute(findOrderQuery, [razorpay_order_id]);
-
-      const updateOrderFailed = `
-        UPDATE cp_order_temp
-        SET status = ?, payment_status = ?, transaction_number = ?
-        WHERE razorpayOrderID = ?
-      `;
-
-      await pool.execute(updateOrderFailed, [
-        "Cancelled",
-        "Failed",
-        razorpay_payment_id,
-        razorpay_order_id,
-      ]);
-
-      return res.status(403).json({
-        success: false,
-        redirect: "failed_screen",
-        message: "Payment Failed",
-      });
-    }
-
-    console.log("✅ Payment verified successfully");
-
-    // Check if order already exists in permanent table to prevent duplicates
-    const checkExistingOrderQuery = `SELECT * FROM cp_order WHERE razorpayOrderID = ?`;
-    const [existingOrder] = await pool.execute(checkExistingOrderQuery, [razorpay_order_id]);
-
-    if (existingOrder.length > 0) {
-      console.log("⚠️ Order already exists in permanent table:", existingOrder[0].order_id);
-      return res.status(200).json({
-        success: true,
-        redirect: "success_screen",
-        message: "Order already processed successfully.",
-        order_id: existingOrder[0].order_id,
-      });
-    }
-
+    // Get temporary order details first
     const findOrderQuery = `
       SELECT * FROM cp_order_temp 
       WHERE razorpayOrderID = ? 
@@ -964,53 +923,99 @@ exports.VerifyPaymentOrder = async (req, res) => {
 
     if (order.length === 0) {
       console.log("❌ Temporary order not found for razorpayOrderID:", razorpay_order_id);
+      await sendAdminAlert("Order Not Found", `Temporary order not found for Razorpay Order ID: ${razorpay_order_id}`, {
+        razorpay_payment_id,
+        razorpay_order_id,
+        error: "Temporary order not found"
+      });
+
       return res.status(404).json({
         success: false,
-        message: "Order not found.",
+        message: "Order not found. Please contact support with your payment details.",
       });
     }
 
-    const tempOrder = order[0];
+    tempOrder = order[0];
+    errorContext = "Fetching temporary order details";
+
+    // Get order details from temporary order
+    const getTempOrderDetailsQuery = `SELECT * FROM cp_app_order_details WHERE order_id = ?`;
+    const [orderDetails] = await pool.execute(getTempOrderDetailsQuery, [tempOrder.order_id]);
+    tempOrderDetails = orderDetails;
 
     console.log("📋 Temporary order found:", {
       temp_order_id: tempOrder.order_id,
       razorpayOrderID: tempOrder.razorpayOrderID,
       customer_name: tempOrder.customer_name,
-      created_at: tempOrder.created_at,
-    });
-
-    // Get order details from temporary order before processing
-    const getTempOrderDetailsQuery = `SELECT * FROM cp_app_order_details WHERE order_id = ?`;
-    const [tempOrderDetails] = await pool.execute(getTempOrderDetailsQuery, [tempOrder.order_id]);
-
-    console.log("🛍️ Temporary order details found:", {
-      count: tempOrderDetails.length,
-      products: tempOrderDetails.map((item) => ({
-        product_name: item.product_name,
-        quantity: item.unit_quantity,
-        price: item.unit_price,
-      })),
+      order_details_count: tempOrderDetails.length,
     });
 
     if (tempOrderDetails.length === 0) {
       console.log("❌ No order details found for temporary order");
+      await sendAdminAlert("Order Details Not Found", `No order details found for temporary order: ${tempOrder.order_id}`, {
+        razorpay_payment_id,
+        razorpay_order_id,
+        temp_order_id: tempOrder.order_id,
+        error: "Order details not found"
+      });
+
       return res.status(404).json({
         success: false,
-        message: "Order details not found.",
+        message: "Order details not found. Please contact support for assistance.",
       });
     }
 
-    // Update temporary order payment status first
-    const updateOrderQuery = `
-      UPDATE cp_order_temp
-      SET payment_status = ?, transaction_number = ?
-      WHERE razorpayOrderID = ?
-    `;
-    await pool.execute(updateOrderQuery, ["Paid", razorpay_payment_id, razorpay_order_id]);
+    errorContext = "Payment verification with Razorpay";
+    const data = { razorpay_payment_id, razorpay_order_id, razorpay_signature };
 
-    console.log("✅ Temporary order payment status updated");
+    // Verify payment with Razorpay
+    const verifyPayment = new PaymentVerification();
+    const orderCheck = await verifyPayment.verifyPayment(data);
+    console.log("💳 Payment verification result:", orderCheck);
 
-    // Create permanent order
+    // Always create permanent order record regardless of payment verification status
+    errorContext = "Creating permanent order record";
+
+    // Check if order already exists in permanent table
+    const checkExistingOrderQuery = `SELECT * FROM cp_order WHERE razorpayOrderID = ?`;
+    const [existingOrder] = await pool.execute(checkExistingOrderQuery, [razorpay_order_id]);
+
+    if (existingOrder.length > 0) {
+      console.log("⚠️ Order already exists in permanent table:", existingOrder[0].order_id);
+
+      // If payment failed but order exists, update status
+      if (!orderCheck) {
+        await updateOrderStatus(existingOrder[0].order_id, "Cancelled", "Failed", razorpay_payment_id);
+        await sendAdminAlert("Payment Verification Failed - Existing Order",
+          `Payment verification failed for existing order: ${existingOrder[0].order_id}`, {
+          razorpay_payment_id,
+          razorpay_order_id,
+          existing_order_id: existingOrder[0].order_id,
+          error: "Payment verification failed for existing order"
+        });
+
+        return res.status(403).json({
+          success: false,
+          redirect: "failed_screen",
+          message: "Payment verification failed. Your order has been cancelled. Please try again.",
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        redirect: "success_screen",
+        message: "Order already processed successfully.",
+        order_id: existingOrder[0].order_id,
+      });
+    }
+
+    // Determine order status based on payment verification
+    const orderStatus = orderCheck ? "New" : "Cancelled";
+    const paymentStatus = orderCheck ? "Paid" : "Failed";
+
+    console.log(`📝 Creating permanent order with status: ${orderStatus}, payment: ${paymentStatus}`);
+
+    // Create permanent order (always create, regardless of payment status)
     const copyOrderQuery = `
       INSERT INTO cp_order (
         order_date, razorpayOrderID, customer_id, prescription_id, hospital_name, doctor_name, prescription_notes,
@@ -1049,18 +1054,17 @@ exports.VerifyPaymentOrder = async (req, res) => {
       tempOrder.additional_charge,
       tempOrder.payment_mode,
       tempOrder.payment_option,
-      "New",
-      "Paid",
+      orderStatus,
+      paymentStatus,
       razorpay_payment_id,
       "Application"
     ];
 
     const [insertResult] = await pool.execute(copyOrderQuery, orderValues);
-    const newOrderId = insertResult.insertId;
+    newOrderId = insertResult.insertId;
 
     if (!newOrderId) {
-      console.log("❌ Failed to create permanent order");
-      return res.status(500).json({ message: "Failed to create new order." });
+      throw new Error("Failed to create permanent order - no insert ID returned");
     }
 
     console.log("✅ Permanent order created with ID:", newOrderId);
@@ -1068,7 +1072,7 @@ exports.VerifyPaymentOrder = async (req, res) => {
     // Update the permanent order with database order ID
     const updateOrderQuery2 = `
       UPDATE cp_order
-      SET databaseOrderID = ?, transaction_number = ?  ,orderFrom = ?
+      SET databaseOrderID = ?, transaction_number = ?, orderFrom = ?
       WHERE order_id = ?
     `;
 
@@ -1077,18 +1081,18 @@ exports.VerifyPaymentOrder = async (req, res) => {
       `PH-${newOrderId}`,
       "Application",
       newOrderId,
-
     ]);
 
     console.log("✅ Permanent order updated with transaction number: PH-" + newOrderId);
 
-    // FIXED: Insert order details one by one with proper error handling and data validation
+    // Insert order details (always save details, regardless of payment status)
+    errorContext = "Saving order details";
     console.log("🔄 Starting order details migration...");
 
     for (let i = 0; i < tempOrderDetails.length; i++) {
       const detail = tempOrderDetails[i];
 
-      // Validate and sanitize data before insertion
+      // Validate and sanitize data
       const sanitizedDetail = {
         product_id: detail.product_id || null,
         product_name: detail.product_name ? String(detail.product_name).substring(0, 255) : null,
@@ -1099,169 +1103,135 @@ exports.VerifyPaymentOrder = async (req, res) => {
         tax_amount: parseFloat(detail.tax_amount) || 0,
       };
 
-      console.log(`📦 Processing detail ${i + 1}/${tempOrderDetails.length}:`, {
-        product_name: sanitizedDetail.product_name,
-        unit_price: sanitizedDetail.unit_price,
-        unit_quantity: sanitizedDetail.unit_quantity,
-      });
-
-      // Check if this product detail already exists in permanent table for this order
-      const checkExistingDetailQuery = `
-        SELECT * FROM cp_order_details 
-        WHERE order_id = ? AND product_id = ? AND unit_price = ? AND unit_quantity = ?
-      `;
-
-      const [existingDetail] = await pool.execute(checkExistingDetailQuery, [
-        newOrderId,
-        sanitizedDetail.product_id,
-        sanitizedDetail.unit_price,
-        sanitizedDetail.unit_quantity,
-      ]);
-
-      if (existingDetail.length > 0) {
-        console.log(`⚠️ Detail already exists for product ${sanitizedDetail.product_name}, skipping...`);
-        continue;
-      }
-
-      // Insert into cp_order_details (main order details table)
-      const insertOrderDetailQuery = `
-        INSERT INTO cp_order_details 
-        (order_id, product_id, product_name, product_image, unit_price, unit_quantity, tax_percent, tax_amount, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
-      `;
-
-      const detailValues = [
-        newOrderId,
-        sanitizedDetail.product_id,
-        sanitizedDetail.product_name,
-        sanitizedDetail.product_image,
-        sanitizedDetail.unit_price,
-        sanitizedDetail.unit_quantity,
-        sanitizedDetail.tax_percent,
-        sanitizedDetail.tax_amount,
-      ];
-
       try {
-        const [detailInsertResult] = await pool.execute(insertOrderDetailQuery, detailValues);
-        console.log(`✅ Order detail ${i + 1}/${tempOrderDetails.length} created in cp_order_details:`, {
-          detail_id: detailInsertResult.insertId,
-          product_name: sanitizedDetail.product_name,
-          quantity: sanitizedDetail.unit_quantity,
-          price: sanitizedDetail.unit_price,
-        });
-      } catch (detailError) {
-        console.error(`❌ Error creating detail in cp_order_details for product ${sanitizedDetail.product_name}:`, detailError);
-        throw detailError;
-      }
+        // Insert into cp_order_details
+        const insertOrderDetailQuery = `
+          INSERT INTO cp_order_details 
+          (order_id, product_id, product_name, product_image, unit_price, unit_quantity, tax_percent, tax_amount, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+        `;
 
-      // Also insert into cp_app_order_details for app compatibility
-      const checkExistingAppDetailQuery = `
-        SELECT * FROM cp_app_order_details 
-        WHERE order_id = ? AND product_id = ? AND unit_price = ? AND unit_quantity = ?
-      `;
+        const detailValues = [
+          newOrderId,
+          sanitizedDetail.product_id,
+          sanitizedDetail.product_name,
+          sanitizedDetail.product_image,
+          sanitizedDetail.unit_price,
+          sanitizedDetail.unit_quantity,
+          sanitizedDetail.tax_percent,
+          sanitizedDetail.tax_amount,
+        ];
 
-      const [existingAppDetail] = await pool.execute(checkExistingAppDetailQuery, [
-        newOrderId,
-        sanitizedDetail.product_id,
-        sanitizedDetail.unit_price,
-        sanitizedDetail.unit_quantity,
-      ]);
+        await pool.execute(insertOrderDetailQuery, detailValues);
 
-      if (existingAppDetail.length === 0) {
+        // Also insert into cp_app_order_details
         const insertAppOrderDetailQuery = `
           INSERT INTO cp_app_order_details 
           (order_id, product_id, product_name, product_image, unit_price, unit_quantity, tax_percent, tax_amount, created_at, updated_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
         `;
 
-        try {
-          const [appDetailInsertResult] = await pool.execute(insertAppOrderDetailQuery, detailValues);
-          console.log(`✅ Order detail ${i + 1}/${tempOrderDetails.length} created in cp_app_order_details:`, {
-            detail_id: appDetailInsertResult.insertId,
-            product_name: sanitizedDetail.product_name,
-          });
-        } catch (appDetailError) {
-          console.error(`❌ Error creating detail in cp_app_order_details for product ${sanitizedDetail.product_name}:`, appDetailError);
-          // Don't throw error for app table, just log it
-        }
+        await pool.execute(insertAppOrderDetailQuery, detailValues);
+
+        console.log(`✅ Order detail ${i + 1}/${tempOrderDetails.length} saved successfully`);
+      } catch (detailError) {
+        console.error(`⚠️ Error saving detail ${i + 1}:`, detailError);
+        // Continue with other details, don't fail the entire process
       }
     }
 
-    console.log("✅ All order details migrated successfully");
+    console.log("✅ Order details migration completed");
 
-    // Get final order details for confirmation
+    // Update temporary order status
+    const updateTempOrderQuery = `
+      UPDATE cp_order_temp
+      SET payment_status = ?, transaction_number = ?, status = ?
+      WHERE razorpayOrderID = ?
+    `;
+    await pool.execute(updateTempOrderQuery, [paymentStatus, razorpay_payment_id, orderStatus, razorpay_order_id]);
+
+    // If payment verification failed, send alert and return error
+    if (!orderCheck) {
+      console.log("❌ Payment verification failed - order saved with failed status");
+
+      await sendAdminAlert("Payment Verification Failed",
+        `Payment verification failed but order data has been preserved`, {
+        razorpay_payment_id,
+        razorpay_order_id,
+        order_id: newOrderId,
+        customer_name: tempOrder.customer_name,
+        customer_phone: tempOrder.customer_phone,
+        amount: tempOrder.amount,
+        error: "Payment verification failed with Razorpay"
+      });
+
+      return res.status(403).json({
+        success: false,
+        redirect: "failed_screen",
+        message: "Payment verification failed. Your order details have been saved and our team will contact you shortly.",
+        order_id: newOrderId,
+      });
+    }
+
+    // Payment successful - proceed with confirmations
+    console.log("✅ Payment verified successfully - processing confirmations");
+
+    errorContext = "Processing successful payment confirmations";
+
+    // Get final order details
     const order_details_after = await find_Details_Order(tempOrder?.razorpayOrderID);
 
-    if (!order_details_after) {
-      console.log("❌ Failed to retrieve final order details");
-      return res.status(404).json({ message: "Failed to retrieve order details" });
+    if (order_details_after) {
+      // Generate receipt HTML
+      const html_page = generateReceiptHTML(order_details_after);
+
+      // Send confirmations (don't fail if these fail)
+      try {
+        // WhatsApp confirmation
+        const message = generateWhatsAppMessage(order_details_after);
+        const dataSend = await sendMessage({
+          mobile: order_details_after?.customer_shipping_phone,
+          msg: message,
+        });
+        console.log("✅ WhatsApp message sent", dataSend);
+      } catch (whatsappError) {
+        console.error("⚠️ WhatsApp sending failed:", whatsappError);
+        // Don't fail the entire process
+      }
+
+      try {
+        // Send confirmation emails
+        const mail_options = {
+          from: "Onco Health Mart <noreply@oncohealthmart.com>",
+          to: "oncohealthmart@gmail.com",
+          subject: "Order Confirmation",
+          html: html_page,
+        };
+
+        const mail_options_for_user = {
+          from: "Onco Health Mart <noreply@oncohealthmart.com>",
+          to: order_details_after.customer_email || tempOrder?.customer_email,
+          subject: "Order Confirmation",
+          html: html_page,
+        };
+
+        await sendEmail(mail_options);
+        await sendEmail(mail_options_for_user);
+        console.log("✅ Confirmation emails sent");
+      } catch (emailError) {
+        console.error("⚠️ Email sending failed:", emailError);
+        // Don't fail the entire process
+      }
     }
 
-    console.log("📊 Final order details:", {
-      order_id: order_details_after.order_id,
-      transaction_number: order_details_after.transaction_number,
-      total_products: order_details_after.details?.length || 0,
-      products: order_details_after.details?.map((item) => ({
-        name: item.product_name,
-        quantity: item.unit_quantity,
-        price: item.unit_price,
-      })),
-    });
-
-    // Generate receipt HTML
-    const html_page = generateReceiptHTML(order_details_after);
-
-    // Generate WhatsApp message
-    const message = generateWhatsAppMessage(order_details_after);
-
-    console.log("📱 Sending WhatsApp confirmation...");
+    // Clean up temporary data (optional)
     try {
-      const dataSend = await sendMessage({
-        mobile: order_details_after?.customer_shipping_phone,
-        msg: message,
-      });
-      console.log("✅ WhatsApp message sent:", dataSend?.success || "Response received");
-    } catch (whatsappError) {
-      console.error("❌ WhatsApp sending failed:", whatsappError.message);
-    }
-
-    // Clean up temporary order and its details
-    console.log("🧹 Cleaning up temporary data...");
-
-    // Delete temporary order details first (foreign key constraint)
-    const deleteTempOrderDetailsQuery = `DELETE FROM cp_app_order_details WHERE order_id = ?`;
-    await pool.execute(deleteTempOrderDetailsQuery, [tempOrder.order_id]);
-    console.log("✅ Temporary order details deleted");
-
-    // Optionally delete temporary order (commented out in original code)
-    // const deleteTempOrderQuery = `DELETE FROM cp_order_temp WHERE razorpayOrderID = ?`;
-    // await pool.execute(deleteTempOrderQuery, [razorpay_order_id]);
-    // console.log("✅ Temporary order deleted");
-
-    // Send confirmation emails
-    console.log("📧 Sending confirmation emails...");
-    try {
-      const mail_options = {
-        from: "Onco Health Mart <noreply@oncohealthmart.com>",
-        to: "oncohealthmart@gmail.com",
-        subject: "Order Confirmation",
-        html: html_page,
-      };
-
-      const mail_options_for_user = {
-        from: "Onco Health Mart <noreply@oncohealthmart.com>",
-        to: order_details_after.customer_email || tempOrder?.customer_email,
-        subject: "Order Confirmation",
-        html: html_page,
-      };
-
-      await sendEmail(mail_options);
-      console.log("✅ Admin email sent");
-
-      await sendEmail(mail_options_for_user);
-      console.log("✅ Customer email sent");
-    } catch (emailError) {
-      console.error("❌ Email sending failed:", emailError);
+      const deleteTempOrderDetailsQuery = `DELETE FROM cp_app_order_details WHERE order_id = ?`;
+      await pool.execute(deleteTempOrderDetailsQuery, [tempOrder.order_id]);
+      console.log("✅ Temporary order details cleaned up");
+    } catch (cleanupError) {
+      console.error("⚠️ Cleanup failed:", cleanupError);
+      // Don't fail the main process
     }
 
     console.log("=== PAYMENT VERIFICATION COMPLETED SUCCESSFULLY ===");
@@ -1276,12 +1246,103 @@ exports.VerifyPaymentOrder = async (req, res) => {
 
   } catch (error) {
     console.error("💥 CRITICAL ERROR in payment verification:", error);
+    console.error("Error context:", errorContext);
     console.error("Error stack:", error.stack);
 
-    // Handle payment failure in temporary table
+    // Try to save order data even if there was an error
     try {
       const { razorpay_payment_id, razorpay_order_id } = req.body;
 
+      // If we have temp order data and haven't created permanent order yet, create it with failed status
+      if (tempOrder && !newOrderId) {
+        console.log("🔄 Attempting to save order data despite error...");
+
+        const emergencyOrderQuery = `
+          INSERT INTO cp_order (
+            order_date, razorpayOrderID, customer_id, prescription_id, hospital_name, doctor_name, prescription_notes,
+            customer_name, patient_name, customer_email, customer_phone, customer_address, customer_pincode,
+            customer_shipping_name, customer_shipping_phone, customer_shipping_address, customer_shipping_pincode,
+            amount, subtotal, order_gst, coupon_code, coupon_discount, shipping_charge, additional_charge,
+            payment_mode, payment_option, status, payment_status, transaction_number, orderFrom
+          )
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `;
+
+        const emergencyOrderValues = [
+          tempOrder.order_date,
+          tempOrder.razorpayOrderID,
+          tempOrder.customer_id,
+          tempOrder.prescription_id,
+          tempOrder.hospital_name,
+          tempOrder.doctor_name,
+          tempOrder.prescription_notes,
+          tempOrder.customer_name,
+          tempOrder.patient_name,
+          tempOrder.customer_email,
+          tempOrder.customer_phone,
+          tempOrder.customer_address,
+          tempOrder.customer_pincode,
+          tempOrder.customer_shipping_name,
+          tempOrder.customer_shipping_phone,
+          tempOrder.customer_shipping_address,
+          tempOrder.customer_shipping_pincode,
+          tempOrder.amount,
+          tempOrder.subtotal,
+          tempOrder.order_gst,
+          tempOrder.coupon_code,
+          tempOrder.coupon_discount,
+          tempOrder.shipping_charge,
+          tempOrder.additional_charge,
+          tempOrder.payment_mode,
+          tempOrder.payment_option,
+          "Error",
+          "Error",
+          razorpay_payment_id || "ERROR",
+          "Application"
+        ];
+
+        const [emergencyResult] = await pool.execute(emergencyOrderQuery, emergencyOrderValues);
+        newOrderId = emergencyResult.insertId;
+
+        if (newOrderId) {
+          // Update with transaction number
+          await pool.execute(`
+            UPDATE cp_order 
+            SET databaseOrderID = ?, transaction_number = ?
+            WHERE order_id = ?
+          `, [newOrderId, `PH-${newOrderId}`, newOrderId]);
+
+          // Save order details if available
+          if (tempOrderDetails && tempOrderDetails.length > 0) {
+            for (const detail of tempOrderDetails) {
+              try {
+                const insertOrderDetailQuery = `
+                  INSERT INTO cp_order_details 
+                  (order_id, product_id, product_name, product_image, unit_price, unit_quantity, tax_percent, tax_amount, created_at, updated_at)
+                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+                `;
+
+                await pool.execute(insertOrderDetailQuery, [
+                  newOrderId,
+                  detail.product_id || null,
+                  detail.product_name ? String(detail.product_name).substring(0, 255) : null,
+                  detail.product_image ? String(detail.product_image).substring(0, 500) : null,
+                  parseFloat(detail.unit_price) || 0,
+                  parseInt(detail.unit_quantity) || 0,
+                  parseFloat(detail.tax_percent) || 0,
+                  parseFloat(detail.tax_amount) || 0,
+                ]);
+              } catch (detailError) {
+                console.error("Error saving emergency detail:", detailError);
+              }
+            }
+          }
+
+          console.log("✅ Emergency order saved with ID:", newOrderId);
+        }
+      }
+
+      // Update temporary order with error status
       if (razorpay_order_id) {
         const updateOrderFailed = `
           UPDATE cp_order_temp
@@ -1290,25 +1351,129 @@ exports.VerifyPaymentOrder = async (req, res) => {
         `;
 
         await pool.execute(updateOrderFailed, [
-          "Cancelled",
-          "Failed",
-          razorpay_payment_id || "FAILED",
+          "Error",
+          "Error",
+          razorpay_payment_id || "ERROR",
           razorpay_order_id,
         ]);
 
-        console.log("✅ Temporary order marked as failed");
+        console.log("✅ Temporary order marked with error status");
       }
-    } catch (dbError) {
-      console.error("❌ Error updating payment failure status in DB:", dbError);
+
+      // Send immediate alert to admin
+      await sendAdminAlert("Critical Payment Processing Error",
+        `Critical error occurred during payment verification`, {
+        razorpay_payment_id,
+        razorpay_order_id,
+        order_id: newOrderId,
+        temp_order_id: tempOrder?.order_id,
+        customer_name: tempOrder?.customer_name,
+        customer_phone: tempOrder?.customer_phone,
+        amount: tempOrder?.amount,
+        error_context: errorContext,
+        error_message: error.message,
+        error_stack: error.stack
+      });
+
+    } catch (emergencyError) {
+      console.error("❌ Emergency error handling failed:", emergencyError);
     }
 
     return res.status(500).json({
       success: false,
-      message: "An error occurred while verifying payment.",
-      error: error.message,
+      message: "We encountered a technical issue while processing your payment. Your order details have been saved and our team will contact you shortly to resolve this.",
+      order_id: newOrderId,
+      error_code: "PAYMENT_PROCESSING_ERROR"
     });
   }
 };
+
+// Helper function to update order status
+async function updateOrderStatus(orderId, status, paymentStatus, transactionNumber) {
+  try {
+    const updateQuery = `
+      UPDATE cp_order 
+      SET status = ?, payment_status = ?, transaction_number = ?
+      WHERE order_id = ?
+    `;
+    await pool.execute(updateQuery, [status, paymentStatus, transactionNumber, orderId]);
+    console.log(`✅ Order ${orderId} status updated to ${status}/${paymentStatus}`);
+  } catch (error) {
+    console.error(`❌ Failed to update order ${orderId} status:`, error);
+  }
+}
+
+// Helper function to send admin alerts
+async function sendAdminAlert(subject, description, errorDetails) {
+  const adminPhone = "7217619794";
+  const adminEmail = "oncohealthmart@gmail.com";
+
+  // Format error details for WhatsApp
+  const whatsappMessage = `
+🚨 *URGENT: ${subject}* 🚨
+
+${description}
+
+*Error Details:*
+${errorDetails.razorpay_payment_id ? `• Payment ID: ${errorDetails.razorpay_payment_id}\n` : ''}${errorDetails.razorpay_order_id ? `• Order ID: ${errorDetails.razorpay_order_id}\n` : ''}${errorDetails.order_id ? `• System Order ID: ${errorDetails.order_id}\n` : ''}${errorDetails.customer_name ? `• Customer: ${errorDetails.customer_name}\n` : ''}${errorDetails.customer_phone ? `• Phone: ${errorDetails.customer_phone}\n` : ''}${errorDetails.amount ? `• Amount: ₹${errorDetails.amount}\n` : ''}${errorDetails.error_context ? `• Context: ${errorDetails.error_context}\n` : ''}${errorDetails.error_message ? `• Error: ${errorDetails.error_message}\n` : ''}
+*Time:* ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}
+
+Please investigate immediately!
+  `.trim();
+
+  // Format error details for Email
+  const emailHtml = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+      <div style="background-color: #ff4444; color: white; padding: 20px; text-align: center;">
+        <h1>🚨 URGENT ALERT: ${subject}</h1>
+      </div>
+      <div style="padding: 20px; background-color: #f9f9f9;">
+        <h2>Description</h2>
+        <p>${description}</p>
+        
+        <h2>Error Details</h2>
+        <table style="width: 100%; border-collapse: collapse;">
+          ${Object.entries(errorDetails).map(([key, value]) =>
+    value ? `<tr><td style="border: 1px solid #ddd; padding: 8px; font-weight: bold;">${key.replace(/_/g, ' ').toUpperCase()}</td><td style="border: 1px solid #ddd; padding: 8px;">${value}</td></tr>` : ''
+  ).join('')}
+        </table>
+        
+        <h2>Timestamp</h2>
+        <p>${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}</p>
+        
+        <div style="background-color: #ffeeee; padding: 15px; margin-top: 20px; border-left: 4px solid #ff4444;">
+          <strong>Action Required:</strong> Please investigate this issue immediately and contact the customer if necessary.
+        </div>
+      </div>
+    </div>
+  `;
+
+  // Send WhatsApp alert
+  try {
+    await sendMessage({
+      mobile: adminPhone,
+      msg: whatsappMessage,
+    });
+    console.log("✅ Admin WhatsApp alert sent");
+  } catch (whatsappError) {
+    console.error("❌ Failed to send WhatsApp alert:", whatsappError);
+  }
+
+  // Send Email alert
+  try {
+    const mail_options = {
+      from: "Onco Health Mart Alert <noreply@oncohealthmart.com>",
+      to: adminEmail,
+      subject: `🚨 URGENT: ${subject}`,
+      html: emailHtml,
+    };
+
+    await sendEmail(mail_options);
+    console.log("✅ Admin email alert sent");
+  } catch (emailError) {
+    console.error("❌ Failed to send email alert:", emailError);
+  }
+}
 
 // Helper function to generate receipt HTML
 function generateReceiptHTML(order_details_after) {

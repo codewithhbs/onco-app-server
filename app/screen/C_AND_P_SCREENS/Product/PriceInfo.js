@@ -5,6 +5,7 @@ import Icon from "react-native-vector-icons/MaterialCommunityIcons"
 export const PriceInfo = ({ sp, storage, mrp, discount }) => {
 
   const savingsAmount = Math.floor(mrp - sp)
+  console.log("storage",storage)
 
   return (
     <View style={styles.container}>
@@ -30,7 +31,7 @@ export const PriceInfo = ({ sp, storage, mrp, discount }) => {
       </View>
 
       <View style={[styles.savingsContainer, { backgroundColor: "#EF6642" }]}>
-        {storage === "Store in a refrigerator (2 - 8°C). Do not freeze." ? <Icon name="weather-sunset-up" size={16} color="#fff" /> : <Icon name="coolant-temperature" size={16} color="#0A95DA" />}
+        {storage === "Store in a refrigerator (2 - 8°C). Do not freeze."  || "Should be stored at room temperature, between 2°C to 8°C" ? <Icon name="weather-sunset-up" size={16} color="#fff" /> : <Icon name="coolant-temperature" size={16} color="#0A95DA" />}
 
         <Text style={styles.savingsText}>
           <Text style={[styles.savingsAmount, { color: '#fff' }]}>{storage}</Text>

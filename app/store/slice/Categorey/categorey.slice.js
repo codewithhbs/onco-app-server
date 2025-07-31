@@ -9,8 +9,8 @@ export const fetchCategories = createAsyncThunk(
   async (_, { rejectWithValue }) => {
     try {
 
-      // const response = await axios.get(`${API_V1_URL}/api/v1/get-Category`); 
-      const response = await axios.get(`http://192.168.56.1:9500/api/v1/get-Category`); 
+      const response = await axios.get(`${API_V1_URL}/api/v1/get-Category`); 
+      // const response = await axios.get(`https://api.oncohealthmart.com/api/v1/get-Category`); 
       return response.data.data;
     } catch (error) {
       console.log(error);
@@ -30,9 +30,9 @@ export const fetchCategoriesById = createAsyncThunk(
   "categories/fetchCategoriesById",
   async (requestId, { rejectWithValue }) => {
     try {
-      // http://192.168.56.1:9500/api/v1/get-Category?categoryId=2
-      // const response = await axios.get(`${API_V1_URL}/api/v1/get-Category?categoryId=${requestId}`);
-      const response = await axios.get(`http://192.168.56.1:9500/api/v1/get-Category?categoryId=${requestId}`);
+      // https://api.oncohealthmart.com/api/v1/get-Category?categoryId=2
+      const response = await axios.get(`${API_V1_URL}/api/v1/get-Category?categoryId=${requestId}`);
+      // const response = await axios.get(`https://api.oncohealthmart.com/api/v1/get-Category?categoryId=${requestId}`);
       return response?.data?.data[0]; 
     } catch (error) {
       console.log(error);

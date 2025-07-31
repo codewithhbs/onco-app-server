@@ -54,7 +54,7 @@ const getLocation = async () => {
     // If not available, get current position with fallback options
     if (!locationData) {
       locationData = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced, // Faster than BestForNavigation
+        accuracy: Location.Accuracy.Highest, // Faster than BestForNavigation
         timeout: 5000, // Fail after 5 seconds
         maximumAge: 10000, // Accept location up to 10s old
       });
