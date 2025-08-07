@@ -103,11 +103,12 @@ export default function Orders() {
             Alert.alert('Error', 'Invalid order. Please try again.');
             return;
         }
-
-        if (item.status.toLowerCase() !== 'completed' || item.status.toLowerCase() !== 'shipped') {
+        console.log("item.status", item.status)
+        if (item.status.toLowerCase() !== 'completed' && item.status.toLowerCase() !== 'shipped') {
             Alert.alert('Cannot Reorder', 'You can only reorder completed orders.');
             return;
         }
+
 
         setReorderingOrderId(item.order_id);
 
