@@ -197,9 +197,11 @@ console.log("address",address)
                 paymentOption,
                 address,
                 cart: updateCart,
+               // shippingFee: ,
                 parseDataCome,
                 Rx_id,
             };
+            console.log("orderData me",orderData)
 
 
             let response;

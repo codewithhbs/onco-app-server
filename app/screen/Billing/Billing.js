@@ -19,7 +19,8 @@ const Billing = () => {
       items: cart?.items || [],
       totalPrice: cart?.totalWithoutDiscount || 0,
       couponCode: cart?.appliedCoupon?.code || '',
-      discount: cart?.appliedCoupon?.discount || 0
+      discount: cart?.appliedCoupon?.discount || 0,
+      deliveryFee:cart?.deliveryFee
     }
   });
 
