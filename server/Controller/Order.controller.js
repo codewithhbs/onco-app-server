@@ -239,12 +239,23 @@ exports.CreateOrder = async (req, res) => {
 
     const setting = settings[0];
 
+   
     // Calculate shipping and additional charges
+    const extraCharges = paymentOption === "COD" ? Number(setting?.cod_fee) : 0;
+    const deliveryFee = Number(cart?.deliveryFee ?? 0);
+
+    const basePrice = (cart?.totalPrice ?? 0) - deliveryFee - extraCharges;
+
     const shippingCharge =
-      cart?.totalPrice > setting?.shipping_threshold
+      basePrice > Number(setting?.shipping_threshold)
         ? 0
         : Number(setting?.shipping_charge);
-    const extraCharges = paymentOption === "COD" ? Number(setting?.cod_fee) : 0;
+ console.log('total price mine shippingCharge', shippingCharge)
+    // const shippingCharge =
+    //   cart?.totalPrice > setting?.shipping_threshold
+    //     ? 0
+    //     : Number(setting?.shipping_charge);
+    // const extraCharges = paymentOption === "COD" ? Number(setting?.cod_fee) : 0;
 
     // Create timestamp for order tracking
     const orderDate = new Date();
@@ -614,6 +625,7 @@ function generateOrderConfirmationMessage(params) {
     paymentMethod,
   } = params;
 
+  console.log('order params', params);
   // Format items list
   const itemsList = items
     .map(
@@ -641,7 +653,7 @@ Thank you for shopping with *Onco Healthmart*! Your order has been successfully 
 ${itemsList}
 
 *Order Summary:*
-Subtotal: ₹${((subtotal || 0) - (shipping || 0) - (extraCharges || 0)).toFixed(
+Subtotal: ₹${((total - shipping - extraCharges)).toFixed(
     2
   )}
 Shipping: ₹${shipping.toFixed(2)}
