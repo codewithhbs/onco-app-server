@@ -653,7 +653,7 @@ Thank you for shopping with *Onco Healthmart*! Your order has been successfully 
 ${itemsList}
 
 *Order Summary:*
-Subtotal: ₹${((total - shipping - extraCharges)).toFixed(
+Subtotal: ₹${((subtotal - shipping - extraCharges)).toFixed(
     2
   )}
 Shipping: ₹${shipping.toFixed(2)}
