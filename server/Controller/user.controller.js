@@ -59,10 +59,10 @@ exports.register = async (req, res) => {
 
         // Save the user to the database
         const sql = `
-            INSERT INTO cp_customer (customer_name, password, email_id, mobile, registration_date, flag, status, platform,otp,otp_expires)
+            INSERT INTO cp_customer (customer_name, password, email_id, mobile, registration_date, flag, status, platform,otp,otp_expires,platform)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `;
-        const values = [customer_name, hashedPassword, email_id, mobile, registration_date, flag, status, platform, generateOtp, otpExpiresAt];
+        const values = [customer_name, hashedPassword, email_id, mobile, registration_date, flag, status, platform, generateOtp, otpExpiresAt, 'app'];
         const [result] = await Pool.execute(sql, values);
 
         res.status(201).json({

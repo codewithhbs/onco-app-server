@@ -349,4 +349,14 @@ export default StyleSheet.create({
     color: '#000',
     fontWeight: '500',
   },
+
+  retryButton: {
+    backgroundColor: '#0A95DA',
+    color: '#fff',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginTop: 10,
+  },
 });

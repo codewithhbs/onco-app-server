@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, Text, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import * as SecureStore from 'expo-secure-store';
 import axios from 'axios';
@@ -14,27 +14,45 @@ const AddressSelection = ({ onSelect }) => {
   const [showAddForm, setShowAddForm] = useState(false);
   const [selectedAddress, setSelectedAddress] = useState(null);
 
-  const fetchAddresses = async () => {
+  const fetchAddresses = async (retryCount = 2) => {
     try {
       const tokenData = await SecureStore.getItemAsync('token');
+      if (!tokenData) throw new Error('No token found');
       const token = JSON.parse(tokenData);
 
       const response = await axios.get(`${API_V1_URL}/api/v1/get-my-address`, {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: { Authorization: `Bearer ${token}` },
+        timeout: 10000 // 10 seconds timeout
       });
 
       setAddresses(response.data.addresses);
       setError('');
     } catch (err) {
-      setError('Failed to load addresses');
-      console.error('Error fetching addresses:', err);
+      if (retryCount > 0) {
+        await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds before retry
+        return fetchAddresses(retryCount - 1);
+      }
+      let errorMessage = 'Failed to load addresses';
+      if (err.message === 'Network Error') {
+        errorMessage = 'Check your internet connection';
+        Alert.alert('Error', errorMessage, [
+          { text: 'OK', onPress: () => console.log('Alert closed') }
+        ]);
+      } else if (err.response?.status === 401 || err.message.includes('token')) {
+        errorMessage = 'Session expired. Please re-login to your account';
+        Alert.alert('Error', errorMessage, [
+          { text: 'OK', onPress: () => console.log('Alert closed') }
+        ]);
+      }
+      setError(errorMessage);
+      console.error('Error fetching addresses:', err.response ? err.response.data : err.message);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchAddresses();
+    fetchAddresses(2); // Retry up to 2 times
   }, []);
 
   const handleAddressSelect = (address) => {
@@ -92,7 +110,7 @@ const AddressSelection = ({ onSelect }) => {
 
   return (
     <View style={styles.sectionContainer}>
-     <Text style={styles.sectionTitle}>Where should we deliver your order?</Text>
+      <Text style={styles.sectionTitle}>Where should we deliver your order?</Text>
 
       <View style={styles.addressList}>
         {addresses.length === 0 ? (

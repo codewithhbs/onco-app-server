@@ -222,7 +222,7 @@ const styles = {
 const Register = ({ navigation }) => {
   const [formData, setFormData] = useState({
     customer_name: '',
-    password: '',
+    password: '123456',
     email_id: '',
     mobile: '',
     platform: Platform.OS === 'ios' ? 'iOS' : 'Android',
@@ -306,12 +306,13 @@ const Register = ({ navigation }) => {
     setErrors(prev => ({ ...prev, [name]: error }));
     return !error;
   };
-
+// hbsdevelopersteam@gmail.comhbshbs
   const handleRegister = async () => {
-    const fields = ['customer_name', 'email_id', 'password', 'mobile'];
+    // const fields = ['customer_name', 'email_id', 'password', 'mobile'];
+    const fields = ['customer_name', 'email_id', 'mobile'];
     const touchedAll = fields.reduce((acc, field) => ({ ...acc, [field]: true }), {});
     setTouched(touchedAll);
-
+    // console.log('formData',formData);
     const isValid = fields.every(field => validateField(field, formData[field]));
     if (!isValid) {
       showMessage('error', 'Please fill all fields correctly');
@@ -497,7 +498,7 @@ const Register = ({ navigation }) => {
                   returnKeyType="next"
                 />
 
-                <CustomInput
+                {/* <CustomInput
                   label="Password"
                   icon="finger-print"
                   placeholder="Enter your password"
@@ -508,7 +509,7 @@ const Register = ({ navigation }) => {
                   error={errors.password}
                   touched={touched.password}
                   returnKeyType="next"
-                />
+                /> */}
 
                 <CustomInput
                   label="Mobile"

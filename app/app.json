@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Onco Health Mart",
-    "slug": "Onco-Health-Mart",
+    "slug": "onco-app",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/logo/ic_launcher.png",
@@ -9,7 +9,7 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-     "bundleIdentifier": "com.happycoding.app",
+      "bundleIdentifier": "com.happycoding.app",
       "icon": "./assets/logo/ic_launcher.png",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
@@ -44,17 +44,21 @@
     "web": {
       "favicon": "./assets/logo/ic_launcher_round.png"
     },
-    "plugins": ["expo-secure-store", "expo-video"],
+    "plugins": [
+      "expo-secure-store",
+      "expo-video"
+    ],
     "extra": {
       "eas": {
-        "projectId": "bdb294ff-0afe-4463-85be-2fa5187578d8"
+        "projectId": "581cd74e-8caf-497d-85ff-334e4cae5594"
       }
     },
     "runtimeVersion": "1.0.0",
     "updates": {
       "enabled": true,
       "fallbackToCacheTimeout": 0,
-      "url": "https://u.expo.dev/bdb294ff-0afe-4463-85be-2fa5187578d8"
-    }
+      "url": "https://u.expo.dev/581cd74e-8caf-497d-85ff-334e4cae5594"
+    },
+    "owner": "codewins"
   }
 }

@@ -151,6 +151,7 @@ exports.deleteMyAddress = async (req, res) => {
     }
 }
 
+
 exports.check_area_availability = async (req, res) => {
     try {
         const { city } = req.body;
@@ -172,9 +173,13 @@ exports.check_area_availability = async (req, res) => {
                 message: `Good news! We deliver to '${city}' and your order will arrive in ${result[0]?.E_T_D}.`
             });
         } else {
-            return res.status(404).json({
-                success: false,
-                message: `We’re sorry, but the city '${city}' is not currently in our serviceable areas. Please check back later or contact our support team for more details.`
+            // return res.status(404).json({
+            //     success: false,
+            //     message: `We’re sorry, but the city '${city}' is not currently in our serviceable areas. Please check back later or contact our support team for more details.`
+            // });
+            return res.status(200).json({
+                success: true,
+                message: `Good news! We deliver to '${city}' and your order will arrive in ${result[0]?.E_T_D}.`
             });
         }
 
