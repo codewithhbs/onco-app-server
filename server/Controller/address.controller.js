@@ -179,7 +179,7 @@ exports.check_area_availability = async (req, res) => {
             // });
             return res.status(200).json({
                 success: true,
-                message: `Good news! We deliver to '${city}' and your order will arrive in ${result[0]?.E_T_D}.`
+                message: `Good news! We deliver to '${city}' and your order will arrive in 3 days.`
             });
         }
 
@@ -214,8 +214,8 @@ exports.getSingleAddresses = async (req, res) => {
 
         // Input validation
         if (isNaN(addressId) || addressId <= 0) {
-            return res.status(400).json({ 
-                message: "Invalid address ID" 
+            return res.status(400).json({
+                message: "Invalid address ID"
             });
         }
 
@@ -224,20 +224,20 @@ exports.getSingleAddresses = async (req, res) => {
 
         // Check if address exists
         if (addresses.length === 0) {
-            return res.status(404).json({ 
-                message: "Address not found" 
+            return res.status(404).json({
+                message: "Address not found"
             });
         }
 
-        return res.status(200).json({ 
+        return res.status(200).json({
             address: addresses[0] // Return first address, not array
         });
 
     } catch (error) {
         // Replace with proper logging
         console.error("Error getting addresses:", error);
-        
-        return res.status(500).json({ 
+
+        return res.status(500).json({
             message: "Internal server error",
             error: process.env.NODE_ENV === 'development' ? error.message : undefined
         });

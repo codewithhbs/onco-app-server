@@ -43,7 +43,7 @@ const ProductCard = ({ product }) => {
                 </View>
 
                 <View style={styles.priceContainer}>
-                    <Text style={styles.price}>₹{discountedPrice}</Text>
+                    <Text style={styles.price}>₹{discountedPrice.toFixed(2)}</Text>
                     <Text style={styles.mrp}>MRP: ₹{product.product_mrp}</Text>
                     <Text style={styles.discount}>₹{product.discount_amount} off</Text>
                 </View>

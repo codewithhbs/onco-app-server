@@ -176,6 +176,7 @@ const OrderSummary = ({ billingData, cart }) => {
                 parseDataCome,
                 Rx_id,
             };
+            console.log("orderData me",orderData)
 
             const response = await axios.post(
                 `${API_V1_URL}/api/v1/make-a-order`,

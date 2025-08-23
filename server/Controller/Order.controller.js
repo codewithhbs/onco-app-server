@@ -237,6 +237,7 @@ exports.CreateOrder = async (req, res) => {
       validatedTotal = cart.totalPrice - couponDiscount;
     }
 
+
     const shippingCharge = validatedTotal > setting.shipping_threshold ? 0 : Number(setting.shipping_charge);
     const extraCharges = paymentOption === "COD" ? Number(setting.cod_fee) : 0;
     const finalAmount = validatedTotal + shippingCharge + extraCharges;
@@ -430,6 +431,7 @@ function generateOrderConfirmationMessage(params) {
     paymentMethod,
   } = params;
 
+  console.log('order params', params);
   // Format items list
   const itemsList = items
     .map(
@@ -457,7 +459,7 @@ Thank you for shopping with *Onco Healthmart*! Your order has been successfully 
 ${itemsList}
 
 *Order Summary:*
-Subtotal: ₹${((subtotal || 0) - (shipping || 0) - (extraCharges || 0)).toFixed(
+Subtotal: ₹${((subtotal - shipping - extraCharges)).toFixed(
     2
   )}n
 Shipping: ₹${shipping.toFixed(2)}

@@ -149,6 +149,7 @@ const PriceBreakdown = ({ items, coupons, enabledCheckOutButton = false, logged 
       totalPrice: grandTotal,
       couponCode: appliedCoupon?.code || "",
       discount: appliedCoupon?.discount || 0,
+      deliveryFee
     }
 
     navigation.navigate("Billing", { cart: orderDetails })
