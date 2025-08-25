@@ -5,7 +5,7 @@ const pool = require("../Database/db");
 exports.FindAllCoupons = async (req, res) => {
     try {
 
-        const allCouponsQuery = `SELECT * FROM cp_app_offer WHERE 1`;
+        const allCouponsQuery = `SELECT * FROM cp_app_offer WHERE status = 1`;
 
         const [rows] = await pool.execute(allCouponsQuery);
 

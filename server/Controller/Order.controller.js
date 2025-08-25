@@ -226,7 +226,7 @@ exports.CreateOrder = async (req, res) => {
       if (cart.totalPrice < coupon.min_order_value) {
         throw new Error(`Coupon requires a minimum order value of ₹${coupon.min_order_value}.`);
       }
-      if (coupon.discount_type === "Amount") {
+      if (coupon.discount_type === "Fixed") {
         couponDiscount = Math.min(coupon.maxDiscount || Infinity, coupon.discount_amount || 0);
       } else if (coupon.discount_type === "Percentage") {
         couponDiscount = Math.min(
@@ -1516,7 +1516,7 @@ exports.checkCouponCode = async (req, res) => {
     }
 
     let discount = 0;
-    if (coupon.discount_type === "Amount") {
+    if (coupon.discount_type === "Fixed") {
       discount = Math.min(coupon.maxDiscount || Infinity, coupon.discount_amount || 0);
     } else if (coupon.discount_type === "Percentage") {
       discount = Math.min(

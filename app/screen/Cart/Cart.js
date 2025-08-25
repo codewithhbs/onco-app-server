@@ -43,7 +43,6 @@ const Cart = () => {
     setCoupon(code);
   };
   const handleCouponRemove = () => {
-
     setCoupon(null);
   };
 

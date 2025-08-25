@@ -33,6 +33,7 @@
         <data android:scheme="com.oncohealthmart.app"/>
         <data android:scheme="exp+onco-health-mart"/>
         <data android:scheme="com.happy_coding.app"/>
+        <data android:scheme="exp+onco-app"/>
       </intent-filter>
     </activity>
   </application>

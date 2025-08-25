@@ -6,6 +6,7 @@ import axios from 'axios';
 import AddressForm from './AddressForm';
 import styles from './styles';
 import { API_V1_URL } from '../../constant/API';
+import { logoutUser } from '../../store/slice/auth/login.slice';
 
 const AddressSelection = ({ onSelect }) => {
   const [addresses, setAddresses] = useState([]);
@@ -43,6 +44,7 @@ const AddressSelection = ({ onSelect }) => {
         Alert.alert('Error', errorMessage, [
           { text: 'OK', onPress: () => console.log('Alert closed') }
         ]);
+        logoutUser();
       }
       setError(errorMessage);
       console.error('Error fetching addresses:', err.response ? err.response.data : err.message);

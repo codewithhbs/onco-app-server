@@ -185,12 +185,18 @@ export default function AllCoupons() {
                         <View style={styles.couponLeft}>
                             <View style={[styles.discountBadge, { backgroundColor: item.theme || "#0A95DA" }]}>
                                 <MaterialCommunityIcons
-                                    name={item?.percenatge_off ? "percent" : "truck-check"}
+                                    name={item?.discount_type == 'Percentage' ? "percent" : "truck-check"}
                                     size={16}
                                     color="#000"
                                 />
                                 <Text style={styles.discountText}>
-                                    {item?.percenatge_off ? `${item.percenatge_off}% OFF` : "Free Delivery"}
+                                    {/* {item?.percenatge_off ? `${item.percenatge_off}% OFF` : "Free Delivery"} */}
+                                {item?.discount_type == 'Percentage'
+                                        ? `${item.percenatge_off}% OFF`
+                                        : item?.discount_type == 'Fixed'
+                                            ?`₹${item.percenatge_off ?? 0} OFF`
+                                            :"Free Delivery"
+                                            }
                                 </Text>
                             </View>
 
