@@ -47,7 +47,6 @@ const PriceBreakdown = ({ items, coupons, enabledCheckOutButton = false, logged 
   const totalSavings = subtotal - oncoDiscount + discountAmount
 
   // Handle coupon application
-  
   const handleApplyCoupon = async () => {
 
     if (!couponCode.trim() && !coupons?.CODE) {
