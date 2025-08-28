@@ -58,6 +58,8 @@ SplashScreen.preventAutoHideAsync().catch(() => {
   /* ignore error */
 });
 
+// fjdkf
+
 // Initialize Sentry
 Sentry.init({
   dsn: "https://a9e4af59bcd9e0b6c828c72ef9a14453@o4508873810771970.ingest.us.sentry.io/4508885129822208",
