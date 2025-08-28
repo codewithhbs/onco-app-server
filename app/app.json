@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Onco Health Mart",
-    "slug": "onco-app",
+    "slug": "Onco-Health-Mart",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/logo/ic_launcher.png",
@@ -50,15 +50,15 @@
     ],
     "extra": {
       "eas": {
-        "projectId": "581cd74e-8caf-497d-85ff-334e4cae5594"
+        "projectId": "bdb294ff-0afe-4463-85be-2fa5187578d8"
       }
     },
     "runtimeVersion": "1.0.0",
     "updates": {
       "enabled": true,
       "fallbackToCacheTimeout": 0,
-      "url": "https://u.expo.dev/581cd74e-8caf-497d-85ff-334e4cae5594"
+      "url": "https://u.expo.dev/bdb294ff-0afe-4463-85be-2fa5187578d8"
     },
-    "owner": "codewins"
+    "owner": "hbsdevelopersteam"
   }
 }
