@@ -2024,7 +2024,7 @@ exports.checkCouponCode = async (req, res) => {
     connection.release();
   }
 };
-
+/*
 exports.Create_repeat_Order = async (req, res) => {
   try {
     const re_order = req.params.id;
@@ -2443,6 +2443,487 @@ exports.Create_repeat_Order = async (req, res) => {
         // Respond to client
         return res.status(201).json({
           message: "Repeat order created successfully.",
+          orderId: newOrderId,
+          transactionNumber,
+          orderDetails: {
+            subtotal: subtotal,
+            tax: totalTaxAmount,
+            shipping: shippingCharge,
+            extraCharges: extraCharges,
+            discount: couponDiscount,
+            finalAmount: finalAmount
+          }
+        });
+      } catch (error) {
+        console.error("Error creating COD repeat order:", error);
+        return res.status(500).json({
+          message: "An error occurred while creating the repeat order.",
+          error: error.message,
+        });
+      }
+    }
+  } catch (error) {
+    console.error("Error in Create_repeat_Order:", error);
+    return res.status(500).json({
+      message: "An unexpected error occurred while creating repeat order. Please try again later.",
+      error: error.message,
+    });
+  }
+};*/
+
+
+
+
+exports.Create_repeat_Order = async (req, res) => {
+  try {
+    const re_order = req.params.id;
+
+    // Validate user authentication
+    const userId = req.user?.id?.customer_id;
+    if (!userId) {
+      return res.status(401).json({
+        message: "Authentication required. Please log in to complete the order.",
+      });
+    }
+
+    // Check if user exists in the database
+    const checkUserSql = `SELECT * FROM cp_customer WHERE customer_id = ?`;
+    const [userExists] = await pool.execute(checkUserSql, [userId]).catch((err) => {
+      console.error("Database error when checking user:", err);
+      throw new Error("Failed to verify user information.");
+    });
+
+    if (!userExists || userExists.length === 0) {
+      return res.status(404).json({ message: "User not found." });
+    }
+
+    // Find the past order
+    const findPastOrder = `SELECT * FROM cp_order WHERE order_id = ? AND customer_id = ?`;
+    const [order_check] = await pool.execute(findPastOrder, [re_order, userId]).catch((err) => {
+      console.error("Database error when checking past order:", err);
+      throw new Error("Failed to retrieve past order information.");
+    });
+
+    if (order_check.length === 0) {
+      return res.status(404).json({ message: "Past order not found or doesn't belong to you." });
+    }
+
+    const pastOrder = order_check[0];
+
+    if (!pastOrder?.order_id) {
+      throw new Error("Order ID not found. Please check the order details.");
+    }
+
+    // Get order details from past order
+    const orderDetailsSql = `SELECT * FROM cp_app_order_details WHERE order_id = ?`;
+    const [orderDetails] = await pool.execute(orderDetailsSql, [pastOrder?.order_id]).catch((err) => {
+      console.error("Database error when fetching order details:", err);
+      throw new Error("Failed to retrieve order details.");
+    });
+
+    if (!orderDetails || orderDetails.length === 0) {
+      return res.status(400).json({ message: "No product details found in the past order." });
+    }
+
+    // Get system settings
+    const settingsQuery = `SELECT * FROM cp_settings`;
+    const [settings] = await pool.execute(settingsQuery).catch((err) => {
+      console.error("Database error when fetching settings:", err);
+      throw new Error("Failed to retrieve system settings.");
+    });
+
+    if (!settings || settings.length === 0) {
+      return res.status(500).json({ message: "System settings not available." });
+    }
+
+    const setting = settings[0];
+
+    // Calculate subtotal and tax from order items
+    let subtotal = 0;
+    let totalTaxAmount = 0;
+
+    orderDetails.forEach(item => {
+      const itemSubtotal = parseFloat(item.unit_price) * parseInt(item.unit_quantity);
+      const itemTaxAmount = parseFloat(item.tax_amount || 0);
+
+      subtotal += itemSubtotal;
+      totalTaxAmount += itemTaxAmount;
+
+      console.log(`Item: ${item.product_name}`);
+      console.log(`  Price: ₹${item.unit_price} × ${item.unit_quantity} = ₹${itemSubtotal}`);
+      console.log(`  Tax: ₹${itemTaxAmount}`);
+    });
+
+    console.log(`Subtotal: ₹${subtotal}`);
+    console.log(`Total Tax: ₹${totalTaxAmount}`);
+
+    // Calculate additional charges
+    const shippingThreshold = parseFloat(setting?.shipping_threshold || 0);
+    const shippingCharge = subtotal > shippingThreshold ? 0 : parseFloat(setting?.shipping_charge || 0);
+    const extraCharges = pastOrder?.payment_option === "COD" ? parseFloat(setting?.cod_fee || 0) : 0;
+
+    console.log(`Shipping Threshold: ₹${shippingThreshold}`);
+    console.log(`Shipping Charge: ₹${shippingCharge}`);
+    console.log(`Extra Charges (COD): ₹${extraCharges}`);
+
+    // Validate and recalculate coupon discount
+    let couponDiscount = 0;
+    let couponCode = pastOrder?.coupon_code || "";
+    if (couponCode) {
+      // Fetch coupon details from the database
+      const couponQuery = `SELECT * FROM cp_coupons WHERE coupon_code = ?`;
+      const [coupon] = await pool.execute(couponQuery, [couponCode]).catch((err) => {
+        console.error("Database error when fetching coupon:", err);
+        return [[]]; // Return empty array if query fails
+      });
+
+      if (coupon && coupon.length > 0) {
+        const couponData = coupon[0];
+        const currentDate = new Date();
+        const expiryDate = couponData.expiry_date ? new Date(couponData.expiry_date) : null;
+
+        // Check if coupon is valid
+        const isCouponValid =
+          couponData.status === "active" &&
+          (!expiryDate || expiryDate >= currentDate) &&
+          (!couponData.max_usage || couponData.current_usage < couponData.max_usage) &&
+          (!couponData.min_order_amount || subtotal >= couponData.min_order_amount);
+
+        if (isCouponValid) {
+          // Calculate discount based on coupon type
+          if (couponData.discount_type === "percentage") {
+            couponDiscount = (subtotal * parseFloat(couponData.discount_value)) / 100;
+            if (couponData.max_discount_amount) {
+              couponDiscount = Math.min(couponDiscount, parseFloat(couponData.max_discount_amount));
+            }
+          } else if (couponData.discount_type === "fixed") {
+            couponDiscount = parseFloat(couponData.discount_value);
+          }
+          console.log(`Coupon '${couponCode}' applied. Discount: ₹${couponDiscount}`);
+        } else {
+          console.log(`Coupon '${couponCode}' is invalid or expired.`);
+          couponCode = ""; // Clear invalid coupon code
+        }
+      } else {
+        console.log(`Coupon '${couponCode}' not found in database.`);
+        couponCode = ""; // Clear invalid coupon code
+      }
+    }
+
+    console.log(`Coupon Discount: ₹${couponDiscount}`);
+
+    // Final amount calculation
+    const finalAmount = subtotal + totalTaxAmount + shippingCharge + extraCharges - couponDiscount;
+
+    console.log(`Final Amount Calculation:`);
+    console.log(`₹${subtotal} + ₹${totalTaxAmount} + ₹${shippingCharge} + ₹${extraCharges} - ₹${couponDiscount} = ₹${finalAmount}`);
+
+    // Create timestamp for order tracking
+    const orderDate = new Date();
+    const formattedDate = orderDate.toISOString().slice(0, 19).replace("T", " ");
+
+    // Verify prescription if exists
+    let newRxId = pastOrder?.prescription_id || null;
+    if (newRxId) {
+      const prescriptionQuery = `SELECT * FROM cp_app_prescription WHERE id = ?`;
+      const [prescription] = await pool.execute(prescriptionQuery, [newRxId]).catch((err) => {
+        console.error("Database error when checking prescription:", err);
+        newRxId = null;
+      });
+
+      if (!prescription || prescription.length === 0) {
+        newRxId = null;
+      }
+    }
+
+    // Create new order object
+    const Order = {
+      order_date: formattedDate,
+      orderFrom: "Application",
+      customer_id: userExists[0]?.customer_id,
+      prescription_id: newRxId || "",
+      hospital_name: pastOrder?.hospital_name || "",
+      doctor_name: pastOrder?.doctor_name || "",
+      prescription_notes: pastOrder?.prescription_notes || "",
+      customer_name: pastOrder?.customer_name,
+      patient_name: pastOrder?.patient_name || pastOrder?.customer_name,
+      customer_email: userExists[0]?.email_id,
+      customer_phone: pastOrder?.customer_phone,
+      customer_address: pastOrder?.customer_address,
+      customer_pincode: pastOrder?.customer_pincode,
+      customer_shipping_name: pastOrder?.customer_shipping_name,
+      customer_shipping_phone: pastOrder?.customer_shipping_phone,
+      customer_shipping_address: pastOrder?.customer_shipping_address,
+      customer_shipping_pincode: pastOrder?.customer_shipping_pincode,
+      amount: finalAmount,
+      subtotal: subtotal,
+      order_gst: totalTaxAmount.toFixed(2),
+      coupon_code: couponCode, // Use validated coupon code
+      coupon_discount: couponDiscount, // Use recalculated discount
+      shipping_charge: shippingCharge,
+      additional_charge: extraCharges,
+      payment_mode: pastOrder?.payment_mode || "Razorpay",
+      payment_option: pastOrder?.payment_option || "Online",
+      status: newRxId && pastOrder?.payment_option
+        ? pastOrder?.payment_option === "Online"
+          ? "Pending"
+          : "New"
+        : "Prescription Pending",
+    };
+
+    console.log("New Order from past order:", Order);
+
+    // Prepare product details from past order
+    const ProductInOrder = orderDetails.map((item) => ({
+      product_id: item?.product_id,
+      product_name: item?.product_name,
+      product_image: item?.product_image,
+      unit_price: parseFloat(item?.unit_price),
+      unit_quantity: parseInt(item?.unit_quantity),
+      tax_percent: parseFloat(item?.tax_percent || 0).toFixed(2),
+      tax_amount: parseFloat(item?.tax_amount || 0).toFixed(2),
+    }));
+
+    console.log("ProductInOrder:", ProductInOrder);
+
+    // SQL queries
+    const sqlOrderDetails = `
+        INSERT INTO cp_app_order_details 
+        (order_id, product_id, product_name, product_image, unit_price, unit_quantity, tax_percent, tax_amount) 
+        VALUES (?,?,?,?,?,?,?,?)`;
+
+    const insertOrderDetailQuery = `
+        INSERT INTO cp_order_details 
+        (order_id, product_id, product_name, product_image, unit_price, unit_quantity, tax_percent, tax_amount, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`;
+
+    const saveOrderSql = `
+       INSERT INTO cp_order (
+           order_date, orderFrom, customer_id, prescription_id, hospital_name, doctor_name, prescription_notes,
+           customer_name, patient_name, customer_email, customer_phone, customer_address, customer_pincode,
+           customer_shipping_name, customer_shipping_phone, customer_shipping_address, customer_shipping_pincode,
+           amount, subtotal, order_gst, coupon_code, coupon_discount, shipping_charge, additional_charge,
+           payment_mode, payment_option, status
+       ) VALUES (
+           ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+       )`;
+
+    const saveOrderInTemp = `
+       INSERT INTO cp_order_temp (
+           order_date, razorpayOrderID, orderFrom, customer_id, prescription_id, hospital_name, doctor_name, prescription_notes,
+           customer_name, patient_name, customer_email, customer_phone, customer_address, customer_pincode,
+           customer_shipping_name, customer_shipping_phone, customer_shipping_address, customer_shipping_pincode,
+           amount, subtotal, order_gst, coupon_code, coupon_discount, shipping_charge, additional_charge,
+           payment_mode, payment_option, status
+       ) VALUES (
+           ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+       )`;
+
+    // Process order based on payment option
+    if (pastOrder?.payment_option === "Online") {
+      // Handle online payment with Razorpay
+      try {
+        const razorpay = new CreateOrderRazorpay();
+        const amount = finalAmount;
+        const sendOrder = await razorpay.createOrder(amount);
+
+        // Prepare temporary order for Razorpay
+        const TempOrder = {
+          order_date: formattedDate,
+          razorpayOrderID: sendOrder.id,
+          orderFrom: "Application",
+          customer_id: userExists[0]?.customer_id,
+          prescription_id: newRxId || "",
+          hospital_name: pastOrder?.hospital_name || "",
+          doctor_name: pastOrder?.doctor_name || "",
+          prescription_notes: pastOrder?.prescription_notes || "",
+          customer_name: pastOrder?.customer_name,
+          patient_name: pastOrder?.patient_name || pastOrder?.customer_name,
+          customer_email: userExists[0]?.email_id,
+          customer_phone: pastOrder?.customer_phone,
+          customer_address: pastOrder?.customer_address,
+          customer_pincode: pastOrder?.customer_pincode,
+          customer_shipping_name: pastOrder?.customer_shipping_name,
+          customer_shipping_phone: pastOrder?.customer_shipping_phone,
+          customer_shipping_address: pastOrder?.customer_shipping_address,
+          customer_shipping_pincode: pastOrder?.customer_shipping_pincode,
+          amount: finalAmount,
+          subtotal: subtotal,
+          order_gst: totalTaxAmount.toFixed(2),
+          coupon_code: couponCode, // Use validated coupon code
+          coupon_discount: couponDiscount, // Use recalculated discount
+          shipping_charge: shippingCharge,
+          additional_charge: extraCharges,
+          payment_mode: pastOrder?.payment_mode || "Razorpay",
+          payment_option: "Online",
+          status: "Pending",
+        };
+
+        const orderValuesTemp = Object.values(TempOrder);
+
+        // Save temporary order
+        const [saveOrder] = await pool.execute(saveOrderInTemp, orderValuesTemp).catch((err) => {
+          console.error("Database error when saving temporary order:", err);
+          throw new Error("Failed to create temporary order.");
+        });
+
+        // Save order details
+        for (const item of ProductInOrder) {
+          const orderDetailsValues = [
+            saveOrder.insertId,
+            item.product_id,
+            item.product_name,
+            item.product_image,
+            item.unit_price,
+            item.unit_quantity,
+            item.tax_percent,
+            item.tax_amount,
+          ];
+
+          await pool.execute(sqlOrderDetails, orderDetailsValues).catch((err) => {
+            console.error(`Database error when saving product ${item.product_name}:`, err);
+          });
+        }
+
+        console.log("Repeat Order (Online) - TempOrder:", TempOrder);
+
+        // Send admin notification for pending online payment
+        await sendAdminOrderNotification({
+          order: TempOrder,
+          products: ProductInOrder,
+          customer: userExists[0],
+          isTemp: true,
+          orderId: saveOrder.insertId,
+          razorpayOrderId: sendOrder.id,
+        });
+
+        return res.status(201).json({
+          message: couponCode ? "Repeat order created successfully with coupon applied." : "Repeat order created successfully. Note: Original coupon was invalid or expired.",
+          sendOrder,
+        });
+      } catch (error) {
+        console.error("Error processing online payment for repeat order:", error);
+        return res.status(500).json({
+          message: "Failed to process payment request for repeat order.",
+          error: error.message,
+        });
+      }
+    } else {
+      // Handle COD repeat order
+      try {
+        console.log("=== COD REPEAT ORDER PROCESSING STARTED ===");
+        console.log("Repeat Order Details:", Order);
+        console.log("Products in Repeat Order:", ProductInOrder);
+
+        const orderValues = Object.values(Order);
+
+        // Save order
+        const [orderPlaced] = await pool.execute(saveOrderSql, orderValues).catch((err) => {
+          console.error("Database error when saving repeat order:", err);
+          throw new Error("Failed to create repeat order.");
+        });
+
+        if (!orderPlaced?.insertId) {
+          throw new Error("Failed to retrieve order ID after saving repeat order.");
+        }
+
+        const newOrderId = orderPlaced.insertId;
+        const transactionNumber = `PH-${newOrderId}`;
+
+        console.log(`COD Repeat Order created with ID: ${newOrderId}`);
+        console.log(`Transaction Number: ${transactionNumber}`);
+
+        // Update order with generated ID and transaction number
+        const updateOrderQuery = `
+          UPDATE cp_order
+          SET databaseOrderID = ?, transaction_number = ?
+          WHERE order_id = ?
+        `;
+
+        await pool.execute(updateOrderQuery, [newOrderId, transactionNumber, newOrderId]).catch((err) => {
+          console.error("Database error when updating repeat order with transaction number:", err);
+        });
+
+        console.log("Repeat Order updated with transaction number successfully");
+
+        // Process each product in the repeat order
+        console.log("=== SAVING REPEAT ORDER PRODUCTS TO BOTH TABLES ===");
+
+        for (const [index, item] of ProductInOrder.entries()) {
+          console.log(`Processing repeat order product ${index + 1}:`, item.product_name);
+
+          const orderDetailsValues = [
+            newOrderId,
+            item.product_id,
+            item.product_name,
+            item.product_image,
+            item.unit_price,
+            item.unit_quantity,
+            item.tax_percent,
+            item.tax_amount,
+          ];
+
+          try {
+            await pool.execute(sqlOrderDetails, orderDetailsValues);
+            console.log(`✓ Product ${item.product_name} saved to cp_app_order_details`);
+
+            await pool.execute(insertOrderDetailQuery, orderDetailsValues);
+            console.log(`✓ Product ${item.product_name} saved to cp_order_details`);
+          } catch (productError) {
+            console.error(`❌ Error inserting repeat order product ${item.product_name}:`, productError);
+          }
+        }
+
+        console.log(`=== REPEAT ORDER PRODUCT INSERTION COMPLETED ===`);
+        console.log(`Total products processed: ${ProductInOrder.length}`);
+
+        // Compose WhatsApp order confirmation message
+        const message = generateOrderConfirmationMessage({
+          orderNumber: transactionNumber,
+          customerName: pastOrder?.customer_name,
+          items: ProductInOrder,
+          subtotal: subtotal,
+          shipping: shippingCharge,
+          extraCharges,
+          total: finalAmount,
+          paymentMethod: "Cash on Delivery",
+        });
+
+        // Send WhatsApp message to customer
+        const userMobile = userExists[0]?.mobile || pastOrder?.customer_phone;
+        if (userMobile) {
+          try {
+            await sendMessage({
+              mobile: userMobile,
+              msg: message,
+            });
+            console.log(`WhatsApp message sent for repeat order to: ${userMobile}`);
+          } catch (messageError) {
+            console.error("Failed to send WhatsApp notification for repeat order:", messageError);
+          }
+        }
+
+        console.log("Repeat Order (COD) Details:", Order);
+
+        // Send email notification to admin
+        await sendAdminOrderNotification({
+          order: {
+            ...Order,
+            order_id: newOrderId,
+            transaction_number: transactionNumber,
+          },
+          products: ProductInOrder,
+          customer: userExists[0],
+          isTemp: false,
+          orderId: newOrderId,
+        });
+
+        console.log("Admin notification sent successfully for repeat order");
+        console.log("=== COD REPEAT ORDER PROCESSING COMPLETED ===");
+
+        // Respond to client
+        return res.status(201).json({
+          message: couponCode ? "Repeat order created successfully with coupon applied." : "Repeat order created successfully. Note: Original coupon was invalid or expired.",
           orderId: newOrderId,
           transactionNumber,
           orderDetails: {

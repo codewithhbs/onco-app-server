@@ -119,6 +119,13 @@ export default function Orders() {
                 { headers: { Authorization: `Bearer ${token}` } }
             );
 
+            if (response.data.message.includes("coupon was invalid or expired")) {
+                Alert.alert(
+                    'Coupon Issue',
+                    'The original coupon is no longer valid or has expired. The order has been placed without the coupon discount.'
+                );
+            }
+
             if (item?.payment_option === 'Online') {
                 const order = response.data?.sendOrder;
 
