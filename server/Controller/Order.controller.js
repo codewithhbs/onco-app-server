@@ -154,6 +154,7 @@ exports.UploadPrescription = (req, res) => {
   }
 };
 
+/*
 exports.CreateOrder = async (req, res) => {
   const connection = await pool.getConnection();
   try {
@@ -417,7 +418,467 @@ exports.CreateOrder = async (req, res) => {
     connection.release();
   }
 };
+*/
 
+exports.CreateOrder = async (req, res) => {
+  try {
+    // Validate user authentication
+    const userId = req.user?.id?.customer_id;
+    if (!userId) {
+      return res.status(401).json({
+        message:
+          "Authentication required. Please log in to complete the order.",
+      });
+    }
+
+    // Extract request data
+    const {
+      Rx_id,
+      address,
+      patientName,
+      patientPhone,
+      hospitalName,
+      doctorName,
+      parseDataCome,
+      prescriptionNotes,
+      paymentOption,
+      cart,
+      payment_mode = "Razorpay",
+    } = req.body;
+
+    // Validate required fields
+    if (!cart?.items || cart?.items?.length === 0) {
+      return res.status(400).json({ message: "Product details are required." });
+    }
+
+    if (!address || !address.stree_address || !address.pincode) {
+      return res.status(400).json({ message: "Delivery address is required." });
+    }
+
+    if (!patientName || !patientPhone) {
+      return res.status(400).json({ message: "Patient details are required." });
+    }
+
+    // Check if user exists in the database
+    const checkUserSql = `SELECT * FROM cp_customer WHERE customer_id = ?`;
+    const [userExists] = await pool
+      .execute(checkUserSql, [userId])
+      .catch((err) => {
+        console.error("Database error when checking user:", err);
+        throw new Error("Failed to verify user information.");
+      });
+
+    if (!userExists || userExists.length === 0) {
+      return res.status(404).json({ message: "User not found." });
+    }
+
+    // Verify prescription if provided
+    let newRxId = null;
+    if (Rx_id) {
+      const prescriptionQuery = `SELECT * FROM cp_app_prescription WHERE genreate_presc_order_id = ?`;
+      const [prescription] = await pool
+        .execute(prescriptionQuery, [Rx_id])
+        .catch((err) => {
+          console.error("Database error when checking prescription:", err);
+          throw new Error("Failed to verify prescription information.");
+        });
+
+      if (prescription.length === 0) {
+        return res.status(404).json({ message: "Prescription not found." });
+      }
+
+      newRxId = prescription[0]?.id;
+    }
+
+    // Get system settings
+    const settingsQuery = `SELECT * FROM cp_settings`;
+    const [settings] = await pool.execute(settingsQuery).catch((err) => {
+      console.error("Database error when fetching settings:", err);
+      throw new Error("Failed to retrieve system settings.");
+    });
+
+    if (!settings || settings.length === 0) {
+      return res
+        .status(500)
+        .json({ message: "System settings not available." });
+    }
+
+    const setting = settings[0];
+
+
+    // Calculate shipping and additional charges
+    const extraCharges = paymentOption === "COD" ? Number(setting?.cod_fee) : 0;
+    const deliveryFee = Number(cart?.deliveryFee ?? 0);
+
+    const basePrice = (cart?.totalPrice ?? 0) - deliveryFee - extraCharges;
+
+    const shippingCharge =
+      basePrice > Number(setting?.shipping_threshold)
+        ? 0
+        : Number(setting?.shipping_charge);
+    console.log('total price mine shippingCharge', shippingCharge)
+    // const shippingCharge =
+    //   cart?.totalPrice > setting?.shipping_threshold
+    //     ? 0
+    //     : Number(setting?.shipping_charge);
+    // const extraCharges = paymentOption === "COD" ? Number(setting?.cod_fee) : 0;
+
+    // Create timestamp for order tracking
+    const orderDate = new Date();
+    const formattedDate = orderDate
+      .toISOString()
+      .slice(0, 19)
+      .replace("T", " ");
+
+    // Prepare order object
+    const Order = {
+      order_date: formattedDate,
+      orderFrom: "Application",
+      customer_id: userExists[0]?.customer_id,
+      prescription_id: newRxId || "",
+      hospital_name: hospitalName || "",
+      doctor_name: doctorName || "",
+      prescription_notes: prescriptionNotes || "",
+      customer_name: patientName,
+      patient_name: patientName,
+      customer_email: userExists[0]?.email_id,
+      customer_phone: patientPhone,
+      customer_address: `${address?.house_no}, ${address?.stree_address}`,
+      customer_pincode: address?.pincode,
+      customer_shipping_name: patientName,
+      customer_shipping_phone: patientPhone,
+      customer_shipping_address: `${address?.house_no}, ${address?.stree_address}`,
+      customer_shipping_pincode: address?.pincode,
+      amount: cart?.totalPrice,
+      subtotal: cart?.totalPrice,
+      order_gst: cart?.totalTax || "",
+      coupon_code: cart?.couponCode || "",
+      coupon_discount: cart?.discount || 0,
+      shipping_charge: shippingCharge,
+      additional_charge: extraCharges,
+      payment_mode: paymentOption === "Online" ? payment_mode : "COD",
+      payment_option: paymentOption === "Online" ? "Online" : "COD",
+      status:
+        newRxId && paymentOption
+          ? paymentOption === "Online"
+            ? "Pending"
+            : "New"
+          : "Prescription Pending",
+    };
+
+    // Prepare product details
+    const ProductInOrder = cart?.items.map((item) => ({
+      product_id: item?.ProductId,
+      product_name: item?.title,
+      product_image: item?.image,
+      unit_price: item?.Pricing,
+      unit_quantity: item?.quantity,
+      tax_percent: item?.taxPercent || 0,
+      tax_amount: item?.taxAmount || 0,
+    }));
+
+    // SQL queries
+    const sqlOrderDetails = `
+        INSERT INTO cp_app_order_details 
+        (order_id, product_id, product_name, product_image, unit_price, unit_quantity, tax_percent, tax_amount) 
+        VALUES (?,?,?,?,?,?,?,?)`;
+
+    const insertOrderDetailQuery = `
+        INSERT INTO cp_order_details 
+        (order_id, product_id, product_name, product_image, unit_price, unit_quantity, tax_percent, tax_amount, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`;
+
+    const saveOrderSql = `
+       INSERT INTO cp_order (
+           order_date, orderFrom, customer_id, prescription_id, hospital_name, doctor_name, prescription_notes,
+           customer_name, patient_name, customer_email, customer_phone, customer_address, customer_pincode,
+           customer_shipping_name, customer_shipping_phone, customer_shipping_address, customer_shipping_pincode,
+           amount, subtotal, order_gst, coupon_code, coupon_discount, shipping_charge, additional_charge,
+           payment_mode, payment_option, status
+       ) VALUES (
+           ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+       )`;
+
+    const saveOrderInTemp = `
+       INSERT INTO cp_order_temp (
+           order_date, razorpayOrderID, orderFrom, customer_id, prescription_id, hospital_name, doctor_name, prescription_notes,
+           customer_name, patient_name, customer_email, customer_phone, customer_address, customer_pincode,
+           customer_shipping_name, customer_shipping_phone, customer_shipping_address, customer_shipping_pincode,
+           amount, subtotal, order_gst, coupon_code, coupon_discount, shipping_charge, additional_charge,
+           payment_mode, payment_option, status
+       ) VALUES (
+           ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+       )`;
+
+    // Process order based on payment option
+    if (paymentOption === "Online") {
+      // Handle online payment with Razorpay
+      try {
+        const razorpay = new CreateOrderRazorpay();
+        const amount = Order?.amount;
+        const sendOrder = await razorpay.createOrder(amount);
+
+        // Prepare temporary order for Razorpay
+        const TempOrder = {
+          order_date: formattedDate,
+          razorpayOrderID: sendOrder.id,
+          orderFrom: "Application",
+          customer_id: userExists[0]?.customer_id,
+          prescription_id: newRxId || "",
+          hospital_name: hospitalName || "",
+          doctor_name: doctorName || "",
+          prescription_notes: prescriptionNotes || "",
+          customer_name: patientName,
+          patient_name: patientName,
+          customer_email: userExists[0]?.email_id,
+          customer_phone: patientPhone,
+          customer_address: `${address?.house_no}, ${address?.stree_address}`,
+          customer_pincode: address?.pincode,
+          customer_shipping_name: patientName,
+          customer_shipping_phone: patientPhone,
+          customer_shipping_address: `${address?.house_no}, ${address?.stree_address}`,
+          customer_shipping_pincode: address?.pincode,
+          amount: Order.amount,
+          subtotal: cart?.totalPrice,
+          order_gst: cart?.totalTax || "",
+          coupon_code: cart?.couponCode || "",
+          coupon_discount: cart?.discount || 0,
+          shipping_charge: shippingCharge,
+          additional_charge: 0,
+          payment_mode: payment_mode,
+          payment_option: paymentOption || "Online",
+          status: "Pending",
+        };
+
+        const orderValuesTemp = Object.values(TempOrder);
+
+        // Save temporary order
+        const [saveOrder] = await pool
+          .execute(saveOrderInTemp, orderValuesTemp)
+          .catch((err) => {
+            console.error("Database error when saving temporary order:", err);
+            throw new Error("Failed to create temporary order.");
+          });
+
+        // Save order details
+        for (const item of ProductInOrder) {
+          const orderDetailsValues = [
+            saveOrder.insertId,
+            item.product_id,
+            item.product_name,
+            item.product_image,
+            item.unit_price,
+            item.unit_quantity,
+            item.tax_percent,
+            item.tax_amount,
+          ];
+
+          await pool
+            .execute(sqlOrderDetails, orderDetailsValues)
+            .catch((err) => {
+              console.error(
+                `Database error when saving product ${item.product_name}:`,
+                err
+              );
+              // Continue with other products even if one fails
+            });
+        }
+        console.log("Order from  Online TempOrder", TempOrder);
+        // Send admin notification for pending online payment
+        await sendAdminOrderNotification({
+          order: TempOrder,
+          products: ProductInOrder,
+          customer: userExists[0],
+          isTemp: true,
+          orderId: saveOrder.insertId,
+          razorpayOrderId: sendOrder.id,
+        });
+
+        return res.status(201).json({
+          message: "Order created successfully. Please complete payment.",
+          sendOrder,
+        });
+      } catch (error) {
+        console.error("Error processing online payment:", error);
+        return res.status(500).json({
+          message: "Failed to process payment request.",
+          error: error.message,
+        });
+      }
+    } else {
+      // Handle COD order
+      try {
+        console.log("=== COD ORDER PROCESSING STARTED ===");
+        console.log("Order Details:", Order);
+        console.log("Products in Order:", ProductInOrder);
+
+        const orderValues = Object.values(Order);
+
+        // Save order
+        const [orderPlaced] = await pool
+          .execute(saveOrderSql, orderValues)
+          .catch((err) => {
+            console.error("Database error when saving order:", err);
+            throw new Error("Failed to create order.");
+          });
+
+        if (!orderPlaced?.insertId) {
+          throw new Error("Failed to retrieve order ID after saving order.");
+        }
+
+        const newOrderId = orderPlaced.insertId;
+        const transactionNumber = `PH-${newOrderId}`;
+
+        console.log(`COD Order created with ID: ${newOrderId}`);
+        console.log(`Transaction Number: ${transactionNumber}`);
+
+        // Update order with generated ID and transaction number
+        const updateOrderQuery = `
+          UPDATE cp_order
+          SET databaseOrderID = ?, transaction_number = ?
+          WHERE order_id = ?
+        `;
+
+        await pool
+          .execute(updateOrderQuery, [
+            newOrderId,
+            transactionNumber,
+            newOrderId,
+          ])
+          .catch((err) => {
+            console.error(
+              "Database error when updating order with transaction number:",
+              err
+            );
+            // Continue even if this update fails
+          });
+
+        console.log("Order updated with transaction number successfully");
+
+        // Process each product in the order
+        let items = [];
+        let totalAmount = 0;
+
+        console.log("=== SAVING PRODUCTS TO BOTH TABLES ===");
+
+        for (const [index, item] of ProductInOrder.entries()) {
+          console.log(`Processing product ${index + 1}:`, item.product_name);
+
+          const orderDetailsValues = [
+            newOrderId,
+            item.product_id,
+            item.product_name,
+            item.product_image,
+            item.unit_price,
+            item.unit_quantity,
+            item.tax_percent,
+            item.tax_amount,
+          ];
+
+          try {
+            // Insert into cp_app_order_details
+            await pool.execute(sqlOrderDetails, orderDetailsValues);
+            console.log(`✓ Product ${item.product_name} saved to cp_app_order_details`);
+
+            // Insert into cp_order_details (ONLY FOR COD)
+            await pool.execute(insertOrderDetailQuery, orderDetailsValues);
+            console.log(`✓ Product ${item.product_name} saved to cp_order_details`);
+
+          } catch (productError) {
+            console.error(
+              `❌ Error inserting product ${item.product_name}:`,
+              productError
+            );
+            // Continue with other products even if one fails
+          }
+
+          // Add formatted item to the message
+          items.push({
+            name: item.product_name,
+            price: item.unit_price,
+            quantity: item.unit_quantity,
+            tax: item.tax_amount,
+            total: item.unit_price * item.unit_quantity + item.tax_amount,
+          });
+
+          // Add to total amount
+          totalAmount += item.unit_price * item.unit_quantity + item.tax_amount;
+        }
+
+        console.log(`=== PRODUCT INSERTION COMPLETED ===`);
+        console.log(`Total products processed: ${ProductInOrder.length}`);
+        console.log(`Total amount calculated: ${totalAmount}`);
+
+        // Compose WhatsApp order confirmation message
+        const message = generateOrderConfirmationMessage({
+          orderNumber: transactionNumber,
+          customerName: patientName,
+          items: ProductInOrder,
+          subtotal: cart?.totalPrice,
+          shipping: shippingCharge,
+          extraCharges,
+          total: Order.amount,
+          paymentMethod: "Cash on Delivery",
+        });
+
+        // Send WhatsApp message to customer
+        const userMobile = userExists[0]?.mobile || patientPhone;
+        if (userMobile) {
+          try {
+            await sendMessage({
+              mobile: userMobile,
+              msg: message,
+            });
+            console.log(`WhatsApp message sent to: ${userMobile}`);
+          } catch (messageError) {
+            console.error(
+              "Failed to send WhatsApp notification:",
+              messageError
+            );
+            // Continue even if message fails
+          }
+        }
+
+        console.log("Order from COD order", Order);
+
+        // Send email notification to admin
+        await sendAdminOrderNotification({
+          order: {
+            ...Order,
+            order_id: newOrderId,
+            transaction_number: transactionNumber,
+          },
+          products: ProductInOrder,
+          customer: userExists[0],
+          isTemp: false,
+          orderId: newOrderId,
+        });
+
+        console.log("Admin notification sent successfully");
+        console.log("=== COD ORDER PROCESSING COMPLETED ===");
+
+        // Respond to client
+        return res.status(201).json({
+          message: "Order created successfully.",
+          orderId: newOrderId,
+          transactionNumber,
+        });
+      } catch (error) {
+        console.error("Error creating COD order:", error);
+        return res.status(500).json({
+          message: "An error occurred while creating the order.",
+          error: error.message,
+        });
+      }
+    }
+  } catch (error) {
+    console.error("Error in CreateOrder:", error);
+    return res.status(500).json({
+      message: "An unexpected error occurred. Please try again later.",
+      error: error.message,
+    });
+  }
+};
 
 function generateOrderConfirmationMessage(params) {
   const {
@@ -461,7 +922,7 @@ ${itemsList}
 *Order Summary:*
 Subtotal: ₹${((subtotal - shipping - extraCharges)).toFixed(
     2
-  )}n
+  )}
 Shipping: ₹${shipping.toFixed(2)}
 ${extraCharges > 0 ? `COD Fee: ₹${extraCharges.toFixed(2)}\n` : ""}
 *Total Amount:* ₹${total.toFixed(2)}
