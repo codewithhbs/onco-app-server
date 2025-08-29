@@ -102,8 +102,8 @@ exports.getAllCoupons = async (req, res) => {
         const offset = (page - 1) * limit;
 
         // Base query
-        let countQuery = `SELECT COUNT(*) as total FROM cp_app_offer`;
-        let allCouponsQuery = `SELECT * FROM cp_app_offer`;
+        let countQuery = `SELECT COUNT(*) as total FROM cp_app_offer WHERE status = 1`;
+        let allCouponsQuery = `SELECT * FROM cp_app_offer WHERE status = 1`;
 
         // Add status filter if provided
         const whereConditions = [];
