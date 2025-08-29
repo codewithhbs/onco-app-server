@@ -49,21 +49,45 @@ exports.register = async (req, res) => {
         console.log('Generated OTP:', generateOtp + 'And Expiry:', otpExpiresAt);
 
         // Send OTP via SMS
-        try {
-            await otpService.sendOtp(`+91${mobile}`, 'RegistrationConfirmation', generateOtp);
-            console.log('OTP sent successfully');
-        } catch (err) {
-            console.error('Error sending OTP:', err.message);
-            return res.status(500).json({ message: 'Error sending OTP. Please try again later.' });
-        }
 
         // Save the user to the database
         const sql = `
-            INSERT INTO cp_customer (customer_name, password, email_id, mobile, registration_date, flag, status, platform,otp,otp_expires,platform)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `;
-        const values = [customer_name, hashedPassword, email_id, mobile, registration_date, flag, status, platform, generateOtp, otpExpiresAt, 'app'];
+        INSERT INTO cp_customer 
+        (customer_name, password, email_id, mobile, registration_date, flag, status, platform, otp, otp_expires)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `;
+
+        const values = [
+            customer_name,
+            hashedPassword,
+            email_id,
+            mobile,
+            registration_date,
+            flag,
+            status,
+            platform,       // keep the one from req.body
+            generateOtp,
+            otpExpiresAt
+        ];
+
+
+        // const sql = `
+        //     INSERT INTO cp_customer (customer_name, password, email_id, mobile, registration_date, flag, status, platform,otp,otp_expires, platform)
+        //     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?,?)
+        // `;
+        // const values = [customer_name, hashedPassword, email_id, mobile, registration_date, flag, status, platform, generateOtp, otpExpiresAt, 'app'];
         const [result] = await Pool.execute(sql, values);
+
+        if (result.affectedRows > 0) {
+            try {
+                await otpService.sendOtp(`+91${mobile}`, 'RegistrationConfirmation', generateOtp);
+                console.log('OTP sent successfully');
+            } catch (err) {
+                console.error('Error sending OTP:', err.message);
+                return res.status(500).json({ message: 'Error sending OTP. Please try again later.' });
+            }
+        }
+
 
         res.status(201).json({
             message: 'User registered successfully. OTP has been sent.',
@@ -374,7 +398,7 @@ exports.login = async (req, res) => {
         let generateOtp;
 
         if (mobile === '7217619794') {
-            generateOtp = 123456; 
+            generateOtp = 123456;
         } else {
             generateOtp = crypto.randomInt(100000, 999999); // Generate random OTP
         }
